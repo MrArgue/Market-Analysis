@@ -48,4 +48,4 @@ No deployment is performed by local build or test commands. Actual deployment an
 
 ## Infrastructure verification
 
-See [the operator-only verification guide](INFRASTRUCTURE_VERIFICATION.md) for the opt-in D1 and FMP checks. No public diagnostic endpoint is exposed. Do not deploy these changes until the actual `market-research-db` UUID has been added to the `DB` binding in Wrangler. Production migration and live tests require separate explicit approval.
+See [the operator-only verification guide](INFRASTRUCTURE_VERIFICATION.md) for the opt-in D1 and FMP checks. No public diagnostic endpoint is exposed. Wrangler binds `DB` to the existing `market-research-db` database. Production migration and live tests require separate explicit approval.

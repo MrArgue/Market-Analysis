@@ -4,18 +4,9 @@ Nothing here runs during deployment, a homepage request, or a health check. Ther
 
 ## 1. Confirm the configuration
 
-The existing Worker must remain `market-analysis`. In Cloudflare, open **D1 → market-research-db** and copy its database ID (UUID, not an API key). The repository needs this entry in the root `wrangler.jsonc`, retaining its other settings:
+The root `wrangler.jsonc` keeps Worker name `market-analysis` and defines `DB` for `market-research-db` using the supplied database UUID `3e7f4084-745f-470c-89cf-b5eb2461179c`. Its migrations directory is `migrations`. The UUID is an identifier, not a credential. No new database is created by this binding.
 
-```text
-"d1_databases": [{
-  "binding": "DB",
-  "database_name": "market-research-db",
-  "database_id": <the actual UUID in quotes>,
-  "migrations_dir": "migrations"
-}]
-```
-
-This is an instruction, not a configuration to paste without replacing the UUID. Do not invent an ID or create another database. In **Workers & Pages → market-analysis → Settings → Bindings**, confirm `DB` refers to that database. Confirm `FMP_API_KEY` is listed as a **Secret** for the production Worker. Never paste its value into GitHub, chat, screenshots, or logs. The presence of a dashboard secret cannot be confirmed from a local process.
+In **Workers & Pages → market-analysis → Settings → Bindings**, confirm `DB` refers to that database. Confirm `FMP_API_KEY` is listed as a **Secret** for the production Worker. Never paste its value into GitHub, chat, screenshots, or logs. The presence of a dashboard secret cannot be confirmed from a local process.
 
 ## 2. Table creation requires your approval
 
