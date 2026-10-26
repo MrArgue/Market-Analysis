@@ -22,7 +22,8 @@ test('approved verification inserts exactly one row and makes exactly one AAPL r
     assert.equal(url.origin + url.pathname, 'https://financialmodelingprep.com/stable/profile');
     assert.equal(url.searchParams.get('symbol'), 'AAPL');
     assert.equal(url.searchParams.get('apikey'), secret);
-    assert.equal(init.redirect, 'error');
+    assert.equal(init.redirect, 'manual');
+    assert.ok(init.signal instanceof AbortSignal);
     return Response.json(profile);
   } });
   assert.equal(calls, 1);
@@ -101,4 +102,60 @@ test('CLI without approvals emits only six sanitized statuses and exits nonzero'
     assert.equal(lines.length, 6);
     for (let index = 0; index < labels.length; index++) assert.ok(lines[index].startsWith(`${labels[index]}: `));
   }
+});
+
+for (const status of [300, 301, 302, 303, 304, 305, 306, 307, 308, 399]) {
+  test(`HTTP ${status} is rejected without following Location or leaking it`, async () => {
+    let calls = 0;
+    const result = await verifyInfrastructure({ FMP_API_KEY: secret }, { ...options, fetchImpl: async (_url, init) => {
+      calls++;
+      assert.equal(init.redirect, 'manual');
+      return new Response(null, { status, headers: { Location: `https://private.example/?apikey=${secret}` } });
+    } });
+    assert.equal(calls, 1);
+    assert.match(result[labels[4]].error, /redirect.*not followed/);
+    assert.equal(result[labels[5]].status, 'FAIL');
+    for (const text of [secret, 'private.example', 'apikey=']) assert.ok(!JSON.stringify(result).includes(text));
+  });
+}
+
+test('Workers-compatible fetch rejects unsupported modes and accepts manual', async () => {
+  let calls = 0;
+  const result = await verifyInfrastructure({ FMP_API_KEY: secret }, { ...options, fetchImpl: async (_url, init) => {
+    if (!['manual', 'follow'].includes(init.redirect)) throw new TypeError('Unsupported redirect mode');
+    calls++;
+    return Response.json(profile);
+  } });
+  assert.equal(calls, 1);
+  assert.equal(result[labels[5]].status, 'PASS');
+});
+
+for (const [name, error, expected] of [
+  ['unsupported options', new TypeError(`Unsupported redirect mode: ${secret}`), /unsupported request option/],
+  ['timeout', new DOMException(secret, 'TimeoutError'), /timed out/],
+  ['abort', new DOMException(secret, 'AbortError'), /timed out/],
+  ['network TypeError', new TypeError(`fetch failed https://example.com/?apikey=${secret}`), /network/],
+  ['network error', new Error(secret), /network/],
+]) {
+  test(`${name} has a distinct sanitized error and no retry`, async () => {
+    let calls = 0;
+    const result = await verifyInfrastructure({ FMP_API_KEY: secret }, { ...options, fetchImpl: async () => { calls++; throw error; } });
+    assert.equal(calls, 1);
+    assert.match(result[labels[4]].error, expected);
+    assert.ok(!JSON.stringify(result).includes(secret));
+    assert.ok(!JSON.stringify(result).includes('https://'));
+  });
+}
+
+test('the timeout remains exactly 15 seconds', async () => {
+  const original = AbortSignal.timeout;
+  const controller = new AbortController();
+  AbortSignal.timeout = milliseconds => { assert.equal(milliseconds, 15000); return controller.signal; };
+  try {
+    const result = await verifyInfrastructure({ FMP_API_KEY: secret }, { ...options, fetchImpl: async (_url, init) => {
+      assert.equal(init.signal, controller.signal);
+      return Response.json(profile);
+    } });
+    assert.equal(result[labels[5]].status, 'PASS');
+  } finally { AbortSignal.timeout = original; }
 });

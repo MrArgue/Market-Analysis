@@ -48,3 +48,7 @@ After the configuration fix is merged and you choose to deploy it:
 5. If the same configuration error remains, the runtime still sees a missing/non-string/invalid email value. Recheck the active deployment, environment selection, spelling, and formatting. An identity mismatch produces a different error; it does not produce the configuration error.
 
 A dry-run cannot inspect or confirm dashboard variables in production. No API key or personal email needs to be committed or printed to verify the setting.
+
+## FMP redirect handling
+
+The server-side request uses Workers-supported `redirect: 'manual'`. Every HTTP 3xx response is rejected without following it or returning its Location header. The unsupported `error` redirect mode throws before network I/O in Workers and must not be used here. Each confirmation still allows only one request, with a 15-second timeout and no retries. Sanitized failures distinguish rejected redirects, HTTP errors, unsupported runtime options, timeouts, invalid JSON, and network/response-transfer failures. A generic TypeError is treated as a possible network failure, not automatically blamed on configuration. No raw exception message or request URL is returned.

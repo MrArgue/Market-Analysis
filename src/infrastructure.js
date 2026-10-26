@@ -45,13 +45,19 @@ export async function verifyInfrastructure(env, {
   const url = new URL('https://financialmodelingprep.com/stable/profile');
   url.searchParams.set('symbol', 'AAPL');
   url.searchParams.set('apikey', env.FMP_API_KEY);
+  let signal;
   try {
-    const response = await fetchImpl(url, { redirect: 'error', signal: AbortSignal.timeout(15000) });
+    signal = AbortSignal.timeout(15000);
+    const response = await fetchImpl(url, { redirect: 'manual', signal });
+    if (response.status >= 300 && response.status < 400) {
+      fail(labels[4], 'FMP returned an HTTP redirect (3xx); it was not followed. No retry was attempted.');
+      return results;
+    }
     if (!response.ok) {
       const explanation = response.status === 401 || response.status === 403
         ? 'Authentication or subscription access denied (401/403).'
         : response.status === 429 ? 'Rate limit reached (429); no retry attempted.'
-          : 'FMP returned an unsuccessful HTTP status.';
+          : `FMP returned HTTP ${response.status}. No retry was attempted.`;
       fail(labels[4], explanation);
       return results;
     }
@@ -60,9 +66,18 @@ export async function verifyInfrastructure(env, {
     if (Array.isArray(data) && data.length === 1 && data[0]?.symbol === 'AAPL'
       && typeof data[0].companyName === 'string' && data[0].companyName.trim()) pass(labels[5]);
     else fail(labels[5], 'Response did not contain one usable AAPL company profile.');
-  } catch {
-    if (results[labels[4]].status === 'PASS') fail(labels[5], 'FMP returned unreadable JSON.');
-    else fail(labels[4], 'FMP request failed or timed out. No retry was attempted.');
+  } catch (error) {
+    const target = results[labels[4]].status === 'PASS' ? labels[5] : labels[4];
+    // Inspect only known error categories; never return messages, URLs, or raw errors.
+    if (signal?.aborted || error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      fail(target, 'FMP request timed out (15-second limit). No retry was attempted.');
+    } else if (error?.name === 'TypeError' && /unsupported.*(redirect|cache|request|option|mode)/i.test(error.message ?? '')) {
+      fail(target, 'The runtime rejected an unsupported request option. No retry was attempted.');
+    } else if (target === labels[5] && error?.name === 'SyntaxError') {
+      fail(target, 'FMP returned unreadable JSON.');
+    } else {
+      fail(target, 'FMP network or response-transfer failure. No retry was attempted.');
+    }
   }
   return results;
 }
