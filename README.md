@@ -45,3 +45,7 @@ If deployment still fails with these settings, inspect the Cloudflare build log 
 The configuration enables the default `workers.dev` address and declares no databases, storage, custom domains, or other paid resources. After deployment, open `/` and confirm the connection message, then request `/health` and confirm HTTP 200 and `{"status":"ok"}`. A successful health response verifies this Worker only; it does not check market data or external services.
 
 No deployment is performed by local build or test commands. Actual deployment and its public URL must be verified separately in Cloudflare.
+
+## Infrastructure verification
+
+See [the operator-only verification guide](INFRASTRUCTURE_VERIFICATION.md) for the opt-in D1 and FMP checks. No public diagnostic endpoint is exposed. Do not deploy these changes until the actual `market-research-db` UUID has been added to the `DB` binding in Wrangler. Production migration and live tests require separate explicit approval.
