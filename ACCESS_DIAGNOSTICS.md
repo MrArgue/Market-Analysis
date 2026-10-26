@@ -34,3 +34,17 @@ POST actions require a native authenticated Access identity, a matching Origin h
 Automated tests simulate the runtime Access context and mock D1 and FMP. They cover authorized identity, absent/failed identity, wrong email, spoofed headers, entry-point context propagation, cross-origin rejection, migration-required behavior, exactly one insert/read or API request, and sanitized errors. No live FMP calls, production writes, migrations, or deployments were run while implementing this feature.
 
 Production Access routing, policy, actual native identity retrieval, database access, secret presence, and FMP subscription access still require the manual checks above. A missing table cannot be fixed from the diagnostic page. No infrastructure or paid resources are provisioned by this code.
+
+## Preserve and verify the production email variable
+
+`keep_vars: true` tells Wrangler to preserve dashboard-managed text/JSON variables during deployments. This is necessary because `DIAGNOSTICS_AUTHORIZED_EMAIL` is configured privately in the dashboard, not in source. Wrangler preserves existing secret bindings separately; `keep_vars` is not what protects `FMP_API_KEY`. This setting does not restore a previously deleted variable.
+
+After the configuration fix is merged and you choose to deploy it:
+
+1. Open **Workers & Pages → market-analysis → Deployments**. Confirm that the active production deployment is built from the new main commit containing `keep_vars: true`. Retrying an older build uses its older configuration and can delete the variable again.
+2. In the production Worker's **Settings → Variables and Secrets**, confirm the exact name `DIAGNOSTICS_AUTHORIZED_EMAIL`. Add it as Text if missing, using your exact Access login email with no quotes, spaces, or newlines. Use the dashboard's Save/Deploy action if offered so it applies to the active Worker, rather than only an inactive version. Do not share the value or screenshots containing it.
+3. Confirm `FMP_API_KEY` remains listed as a Secret without revealing its value. Leave the production DB binding and Access policy unchanged.
+4. Sign in and open `/diagnostics`. Opening the page performs no D1 or FMP test. If the page displays its buttons, the active runtime has received a valid email setting and your native Access identity matches it. Do not click a test button merely to check configuration.
+5. If the same configuration error remains, the runtime still sees a missing/non-string/invalid email value. Recheck the active deployment, environment selection, spelling, and formatting. An identity mismatch produces a different error; it does not produce the configuration error.
+
+A dry-run cannot inspect or confirm dashboard variables in production. No API key or personal email needs to be committed or printed to verify the setting.
