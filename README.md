@@ -49,3 +49,11 @@ No deployment is performed by local build or test commands. Actual deployment an
 ## Infrastructure verification
 
 See [the operator-only verification guide](INFRASTRUCTURE_VERIFICATION.md) for the opt-in D1 and FMP checks. No public diagnostic endpoint is exposed. Wrangler binds `DB` to the existing `market-research-db` database. Production migration and live tests require separate explicit approval.
+
+## Pull-request previews
+
+The empty `previews` block enables Worker Previews without production bindings. The homepage and `/health` need no database or API credentials.
+
+In Cloudflare's preview build settings, use `npm ci && npm run build` for the build command and `npx wrangler preview --ignore-base-config` for the deploy command. The flag prevents dashboard Preview base configuration from adding database bindings or secrets. Keep the root directory at the repository root and use Node.js 22 or newer. Leave production commands and the production `DB` binding and `FMP_API_KEY` secret unchanged.
+
+Do not add `DB`, `FMP_API_KEY`, or production resources to Preview settings. A warning that production bindings are absent from previews is expected. Preview deployment itself is performed by Cloudflare's pull-request build, not by local validation. The pinned Wrangler supports Worker Previews, but its preview command has no dry-run option; local validation uses Wrangler's configuration parser, route tests without credentials, and the deployment dry-run build.
