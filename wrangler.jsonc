@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "russell-1000-research-platform",
+  "name": "market-analysis",
   "main": "src/index.js",
   "compatibility_date": "2026-10-26",
   "workers_dev": true
