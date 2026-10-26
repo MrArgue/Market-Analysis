@@ -1,0 +1,18 @@
+{
+  "name": "market-analysis",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "test": "node --test",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.153.0"
+  }
+}
