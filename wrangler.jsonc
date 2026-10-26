@@ -3,5 +3,14 @@
   "name": "market-analysis",
   "main": "src/index.js",
   "compatibility_date": "2026-10-26",
-  "workers_dev": true
+  "workers_dev": true,
+  "previews": {},
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "market-research-db",
+      "database_id": "3e7f4084-745f-470c-89cf-b5eb2461179c",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

@@ -10,7 +10,8 @@
     "dev": "wrangler dev --local",
     "build": "wrangler deploy --dry-run --outdir dist",
     "test": "node --test",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "verify:infrastructure": "node scripts/verify-infrastructure.js"
   },
   "devDependencies": {
     "wrangler": "4.153.0"
