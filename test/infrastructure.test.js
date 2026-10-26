@@ -79,7 +79,7 @@ test('JSON, network and D1 errors never expose raw messages', async () => {
 
 test('public Worker never invokes diagnostics even when bindings exist', async () => {
   const env = { DB: { prepare() { assert.fail('Unexpected D1 access'); } }, FMP_API_KEY: secret };
-  for (const path of ['/', '/health', '/diagnostics', '/verify']) {
+  for (const path of ['/', '/health', '/verify']) {
     const response = await worker.fetch(new Request(`https://example.com${path}`), env);
     assert.equal(response.status, path === '/' || path === '/health' ? 200 : 404);
     assert.ok(!(await response.text()).includes(secret));

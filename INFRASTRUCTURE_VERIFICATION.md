@@ -1,6 +1,6 @@
 # Manually verify infrastructure
 
-Nothing here runs during deployment, a homepage request, or a health check. There is no public diagnostic endpoint. The diagnostic module accepts server-side `env.DB` and `env.FMP_API_KEY` bindings; it is deliberately separate from the public Worker.
+Nothing here runs during deployment, a homepage request, or a health check. For tests inside the deployed Worker, use the Access-protected interface described in [ACCESS_DIAGNOSTICS.md](ACCESS_DIAGNOSTICS.md). The CLI procedure below remains an alternative operator tool; it does not verify the deployed Worker’s bindings.
 
 ## 1. Confirm the configuration
 
@@ -52,7 +52,7 @@ The CLI prints only PASS/FAIL and sanitized explanations for:
 - FMP API connectivity
 - FMP response validated
 
-In this CLI, “D1 binding available” means the binding has a valid configuration and a CLI adapter is available; the read/write result establishes actual database access. “FMP secret present” means the local operator supplied a value; it does **not** prove the production Worker has the secret. The connectivity test proves that supplied key works, not that Cloudflare can reach FMP from the deployed Worker. Confirm the production binding and secret names in the dashboard separately. End-to-end execution inside the production Worker remains unverified; it would require a separately approved authenticated interface. No such interface or new authentication secret is added here.
+In this CLI, “D1 binding available” means the binding has a valid configuration and a CLI adapter is available; the read/write result establishes actual database access. “FMP secret present” means the local operator supplied a value; it does **not** prove the production Worker has the secret. The connectivity test proves that supplied key works, not that Cloudflare can reach FMP from the deployed Worker. Confirm the production binding and secret names in the dashboard separately. The CLI does not verify end-to-end execution inside the production Worker. The Access-protected diagnostic interface now provides that separate manual workflow; see ACCESS_DIAGNOSTICS.md.
 
 A FAIL exits with a nonzero status. HTTP bodies, database records, request URLs, key values, and raw exceptions are never printed by the diagnostic reporter. Keep terminal output private; do not enable shell tracing, HTTP debug logging, or Wrangler verbose logging while handling credentials.
 

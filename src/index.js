@@ -1,3 +1,5 @@
+import { handleDiagnostics } from './diagnostics.js';
+
 const page = `<!doctype html>
 <html lang="en">
 <head>
@@ -16,7 +18,9 @@ const page = `<!doctype html>
 </html>`;
 
 export default {
-  fetch(request) {
+  fetch(request, env = {}) {
+    const path = new URL(request.url).pathname;
+    if (path === '/diagnostics' || path.startsWith('/diagnostics/')) return handleDiagnostics(request, env);
     const { pathname } = new URL(request.url);
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
