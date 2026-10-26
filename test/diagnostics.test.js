@@ -1,54 +1,56 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { generateKeyPair, exportJWK, SignJWT, createLocalJWKSet } from 'jose';
 import { verifyAccess } from '../src/access.js';
-import { createDiagnosticsHandler } from '../src/diagnostics.js';
+import { createDiagnosticsHandler as createHandler } from '../src/diagnostics.js';
 import worker from '../src/index.js';
 
-const env = { ACCESS_TEAM_DOMAIN: 'example.cloudflareaccess.com', ACCESS_AUD: 'test-audience', DIAGNOSTICS_AUTHORIZED_EMAIL: 'owner@example.com' };
+const env = { DIAGNOSTICS_AUTHORIZED_EMAIL: 'owner@example.com' };
 const secret = 'mock-secret-never-expose';
-const { privateKey, publicKey } = await generateKeyPair('RS256');
-const jwk = await exportJWK(publicKey);
-jwk.kid = 'test';
-const resolver = createLocalJWKSet({ keys: [jwk] });
-async function token(overrides = {}, key = privateKey) {
-  return new SignJWT({ email: 'owner@example.com', ...overrides })
-    .setProtectedHeader({ alg: 'RS256', kid: 'test' }).setIssuer('https://example.cloudflareaccess.com')
-    .setAudience('test-audience').setSubject('user-id').setIssuedAt().setExpirationTime('5m').sign(key);
+const authorizedContext = { access: { getIdentity: async () => ({ email: 'owner@example.com' }) } };
+const authenticate = verifyAccess;
+// Test helper supplies a simulated runtime context, never a request header.
+function createDiagnosticsHandler(options) {
+  const handler = createHandler(options);
+  return (req, bindings, ctx = authorizedContext) => handler(req, bindings, ctx);
 }
-const valid = await token();
-function request(path = '/diagnostics', { jwt = valid, method = 'GET', origin = 'https://example.com', confirm = true } = {}) {
+function request(path = '/diagnostics', { method = 'GET', origin = 'https://example.com', confirm = true } = {}) {
   return new Request(`https://example.com${path}`, {
-    method, headers: { ...(jwt ? { 'Cf-Access-Jwt-Assertion': jwt } : {}), Origin: origin, 'Content-Type': 'application/json' },
+    method, headers: { Origin: origin, 'Content-Type': 'application/json' },
     ...(method === 'POST' ? { body: JSON.stringify({ confirm }) } : {}),
   });
 }
-const authenticate = (req, bindings) => verifyAccess(req, bindings, resolver);
 
-for (const [name, jwt] of [['missing', null], ['malformed', 'invalid'], ['wrong user', await token({ email: 'other@example.com' })]]) {
-  test(`${name} authentication rejects before any D1 or FMP operation`, async () => {
-    const handler = createDiagnosticsHandler({ authenticate, fetchImpl: () => assert.fail('Network access') });
+for (const [name, ctx, status] of [
+  ['missing context', undefined, 401],
+  ['missing access', {}, 401],
+  ['missing identity', { access: { getIdentity: async () => null } }, 401],
+  ['missing email', { access: { getIdentity: async () => ({}) } }, 401],
+  ['wrong user', { access: { getIdentity: async () => ({ email: 'other@example.com' }) } }, 403],
+  ['identity failure', { access: { getIdentity: async () => { throw new Error(secret); } } }, 401],
+]) {
+  test(`${name} rejects before any D1 or FMP operation`, async () => {
+    const handler = createHandler({ fetchImpl: () => assert.fail('Network access') });
     const bindings = { ...env, FMP_API_KEY: secret, DB: { prepare() { assert.fail('D1 access'); } } };
     for (const path of ['/diagnostics', '/diagnostics/d1', '/diagnostics/fmp', '/diagnostics/client.js']) {
-      const response = await handler(request(path, { jwt, method: path.endsWith('/d1') || path.endsWith('/fmp') ? 'POST' : 'GET' }), bindings);
-      assert.equal(response.status, name === 'wrong user' ? 403 : 401);
+      const req = request(path, { method: path.endsWith('/d1') || path.endsWith('/fmp') ? 'POST' : 'GET' });
+      req.headers.set('Cf-Access-Jwt-Assertion', 'spoofed-token');
+      req.headers.set('Cf-Access-Authenticated-User-Email', 'owner@example.com');
+      const response = await handler(req, bindings, ctx);
+      assert.equal(response.status, status);
       assert.ok(!(await response.text()).includes(secret));
     }
   });
 }
 
-test('signature, audience, issuer and expiry are checked cryptographically', async () => {
-  const other = await generateKeyPair('RS256');
-  const badTokens = [await token({}, other.privateKey)];
-  for (const [claim, value] of [['aud', 'wrong'], ['iss', 'https://wrong.cloudflareaccess.com'], ['exp', 1]]) {
-    const jwt = await new SignJWT({ email: 'owner@example.com', sub: 'user', iat: 1, exp: Math.floor(Date.now()/1000)+300, iss: 'https://example.cloudflareaccess.com', aud: 'test-audience', [claim]: value }).setProtectedHeader({ alg: 'RS256', kid: 'test' }).sign(privateKey);
-    badTokens.push(jwt);
-  }
-  for (const jwt of badTokens) assert.equal((await authenticate(request('/diagnostics', { jwt }), env)).status, 401);
+test('native authorized identity is accepted and passed through the Worker entry point', async () => {
+  const response = await worker.fetch(request(), env, authorizedContext);
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /Infrastructure checks/);
+  assert.equal((await verifyAccess(request(), env, { access: { getIdentity: async () => ({ email: 'OWNER@example.com' }) } })).status, 200);
 });
 
 test('missing or invalid Access settings fail closed in the public Worker', async () => {
-  for (const bindings of [{}, { ...env, ACCESS_TEAM_DOMAIN: 'evil.example.com' }, { ...env, DIAGNOSTICS_AUTHORIZED_EMAIL: '' }]) {
+  for (const bindings of [{}, { ...env, DIAGNOSTICS_AUTHORIZED_EMAIL: '' }]) {
     assert.equal((await worker.fetch(request(), bindings)).status, 503);
   }
 });

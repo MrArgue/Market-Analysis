@@ -33,9 +33,9 @@ for (const button of document.querySelectorAll('[data-test]')) button.addEventLi
 const json = (value, status = 200) => Response.json(value, { status, headers });
 
 export function createDiagnosticsHandler({ authenticate = verifyAccess, fetchImpl = fetch } = {}) {
-  return async function diagnostics(request, env = {}) {
+  return async function diagnostics(request, env = {}, ctx) {
     // Authentication precedes every diagnostic route, method, and operation.
-    const auth = await authenticate(request, env);
+    const auth = await authenticate(request, env, ctx);
     if (auth.status !== 200) return json({ status: 'FAIL', error: auth.error }, auth.status);
     const path = new URL(request.url).pathname;
     if (request.method === 'GET' && path === '/diagnostics') return new Response(page, { headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8' } });

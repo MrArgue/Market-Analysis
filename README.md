@@ -48,7 +48,7 @@ No deployment is performed by local build or test commands. Actual deployment an
 
 ## Infrastructure verification
 
-See [the operator-only verification guide](INFRASTRUCTURE_VERIFICATION.md) for the opt-in D1 and FMP checks. Worker diagnostics require validated Cloudflare Access authentication; see [Access setup and manual tests](ACCESS_DIAGNOSTICS.md). Wrangler binds `DB` to the existing `market-research-db` database. Production migration and live tests require separate explicit approval.
+See [the operator-only verification guide](INFRASTRUCTURE_VERIFICATION.md) for the opt-in D1 and FMP checks. Worker diagnostics require native Cloudflare Access identity verification; see [Access setup and manual tests](ACCESS_DIAGNOSTICS.md). Wrangler binds `DB` to the existing `market-research-db` database. Production migration and live tests require separate explicit approval.
 
 ## Pull-request previews
 
@@ -60,4 +60,4 @@ Do not add `DB`, `FMP_API_KEY`, or production resources to Preview settings. A w
 
 ## Access-protected diagnostic page
 
-See [ACCESS_DIAGNOSTICS.md](ACCESS_DIAGNOSTICS.md) for the required Access application, authorized-email settings, and separate manually confirmed D1 and FMP actions. Diagnostics fail closed until configured; no tests run on page load or deployment.
+See [ACCESS_DIAGNOSTICS.md](ACCESS_DIAGNOSTICS.md) for the existing All traffic Worker Access protection, authorized-email setting, and separate manually confirmed D1 and FMP actions. Diagnostics fail closed until configured; no tests run on page load or deployment.
