@@ -1,4 +1,4 @@
-// Deliberately not imported by the public Worker. No public diagnostic route.
+// Shared by the operator CLI and Access-authenticated diagnostic actions.
 export const labels = [
   'Worker configuration', 'D1 binding available', 'D1 read/write test',
   'FMP secret present', 'FMP API connectivity', 'FMP response validated',
