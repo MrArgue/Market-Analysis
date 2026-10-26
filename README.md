@@ -21,7 +21,26 @@ npm run dev
 
 ## Deployment verification
 
-Connect this GitHub repository through Cloudflare Workers' Git integration using the Cloudflare dashboard and select the Workers Free plan. Use `npm run build` as the build command and `npm run deploy` as the deploy command, with the repository root as the project directory. Cloudflare manages authentication for its Git integration; do not add API keys to this repository.
+In the existing **market-analysis** Worker, open **Settings → Builds** and verify:
+
+- Git repository: `MrArgue/Market-Analysis`.
+- Production branch: `main`, after merging the pull request containing this application. The original `main` contains only `Test file` and cannot deploy a Worker. To validate before merging, select the feature branch containing these files instead.
+- Root directory: repository root (leave blank or use `/` as the dashboard permits), not `src` or `dist`.
+- Build command: `npm ci && npm run build`.
+- Deploy command: `npx wrangler deploy` (equivalently `npm run deploy`).
+- Node.js: 22 or newer. If the build image defaults to an older version, set the non-secret build variable `NODE_VERSION` to `22`.
+
+`wrangler.jsonc` must be committed at the repository root alongside `package.json` and `package-lock.json`. Its Worker name is `market-analysis` and its entry point is `src/index.js`, relative to that root. Wrangler bundles this source directly; `dist` is only the ignored output of local dry-run validation and is not the configured entry point.
+
+Keep the existing Worker on the Free plan. Cloudflare manages authentication for its Git integration; do not add API keys to this repository. Do not create another Worker or paid bindings to resolve a build failure.
+
+For a deployment-free check of the exact deploy command, run:
+
+```sh
+npx wrangler deploy --dry-run
+```
+
+If deployment still fails with these settings, inspect the Cloudflare build log for the first error. Local dry-run validation verifies configuration and bundling, but cannot verify the dashboard's selected branch, Cloudflare-managed permissions, or account-specific deployment restrictions.
 
 The configuration enables the default `workers.dev` address and declares no databases, storage, custom domains, or other paid resources. After deployment, open `/` and confirm the connection message, then request `/health` and confirm HTTP 200 and `{"status":"ok"}`. A successful health response verifies this Worker only; it does not check market data or external services.
 
