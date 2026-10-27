@@ -1,8 +1,10 @@
 # Russell 1000 Research Platform
 
-Minimal Cloudflare Worker for verifying a deployment connection.
+Responsive stock technical chart served by the existing Cloudflare Worker, with FMP history and a D1 cache. See [the workbook formula audit and operational notes](TECHNICAL_METHODOLOGY.md).
 
-- `GET /`: displays **Russell 1000 Research Platform — Connection Successful**.
+- `GET /`: displays the technical chart app; page load performs no market requests.
+- `GET /chart.js`: serves the chart controls without external scripts.
+- `GET /api/chart`: Access-authenticated market history, six-component score and extreme indicators. Requires the existing secret/binding and separately approved cache migration.
 - `GET /health`: returns HTTP 200 with `{"status":"ok"}` and caching disabled.
 - Other paths return 404; unsupported methods return 405.
 
@@ -42,7 +44,7 @@ npx wrangler deploy --dry-run
 
 If deployment still fails with these settings, inspect the Cloudflare build log for the first error. Local dry-run validation verifies configuration and bundling, but cannot verify the dashboard's selected branch, Cloudflare-managed permissions, or account-specific deployment restrictions.
 
-The configuration enables the default `workers.dev` address and declares no databases, storage, custom domains, or other paid resources. After deployment, open `/` and confirm the connection message, then request `/health` and confirm HTTP 200 and `{"status":"ok"}`. A successful health response verifies this Worker only; it does not check market data or external services.
+The configuration retains the existing `workers.dev` address and D1 binding. After an approved deployment, open `/` and confirm the chart controls, then request `/health` and confirm HTTP 200 and `{"status":"ok"}`. A successful health response verifies this Worker only; it does not check market data or external services.
 
 No deployment is performed by local build or test commands. Actual deployment and its public URL must be verified separately in Cloudflare.
 
