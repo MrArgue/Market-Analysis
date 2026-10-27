@@ -9,6 +9,6 @@ export function sampleHistory() {
    volume: 1000000 + i % 9 * 100000, score, z, signal: z >= 2 ? 'overbought' : z <= -2 ? 'oversold' : null,
    regime: score >= 5 ? 'strong' : score <= 1 ? 'weak' : 'neutral', averages: [[.047,.046],[.042,.04],[800000,700000]], components: [1,1,1,1,1,1] }); i++;
  }
- return { symbol: 'SAMPLE', sector: 'SECTOR', sectorName: 'Fictional sector index', benchmark: 'MARKET', missingBenchmarkDates: 0, options: { short: 50, long: 200 }, rows };
+ return { symbol: 'SAMPLE', sector: 'SECTOR', sectorName: 'Fictional sector ETF', benchmark: 'MARKET', missingBenchmarkDates: 0, options: { short: 50, long: 200 }, rows };
 }
 export const sampleScript = sampleHistory.toString() + '\nexport { sampleHistory };';

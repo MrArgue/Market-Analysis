@@ -2,14 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleMarket } from '../src/market.js';
 import { normalize } from '../src/technical.js';
-import { sectorIndices, resolveSector } from '../src/sectors.js';
+import { sectorEtfs, resolveSectorEtf } from '../src/sectors.js';
 import worker from '../src/index.js';
 const authorized = { access: { getIdentity: async () => ({ email: 'owner@example.com' }) } };
 const query = 'symbol=AAPL&sector=Information+Technology&from=2020-01-01&to=2020-01-10';
 const request = (params = query, options = {}) => new Request('https://example.com/api/chart?' + params, options);
 const bars = Array.from({ length: 10 }, (_, i) => ({ date: '2020-01-' + String(i + 1).padStart(2, '0'), open: 9.5 + i, high: 11 + i, low: 9 + i, close: 10 + i, volume: 100 }));
-// Synthetic catalogue fixture: production always discovers the symbol from FMP.
-const catalogue = [{ symbol: '^SP500-45', name: 'S&P 500 Information Technology (Sector)' }];
 function setup() {
  const entries = new Map(), calls = []; let writes = 0, reads = 0;
  const env = { DIAGNOSTICS_AUTHORIZED_EMAIL: 'owner@example.com', FMP_API_KEY: 'test-sensitive-key', DB: {
@@ -20,7 +18,7 @@ function setup() {
  } };
  const fetcher = async (url, options) => {
   calls.push({ url, options });
-  if (url.pathname.endsWith('/index-list')) return Response.json(catalogue);
+  if (url.pathname.endsWith('/index-list')) throw new Error('Unexpected index-list request');
   if (url.pathname.endsWith('/profile')) return Response.json([{ symbol: 'AAPL', sector: 'Technology' }]);
   return Response.json(bars);
  };
@@ -39,37 +37,35 @@ test('invalid queries and non-GET methods never reach D1 or FMP', async () => {
  }
  for (const method of ['HEAD', 'POST']) { const s = setup(); assert.equal((await handleMarket(request(undefined, { method }), s.env, authorized, s.fetcher)).status, 405); assert.equal(s.reads, 0); }
 });
-test('discovers the sector index, preserves real OHLC, and caches catalogue and histories independently of methodology', async () => {
+test('uses the sector ETF, preserves real OHLC, and caches histories independently of methodology', async () => {
  const s = setup(), r = await handleMarket(request(), s.env, authorized, s.fetcher), data = await r.json();
- assert.equal(r.status, 200); assert.equal(data.sector, '^SP500-45'); assert.match(data.sectorName, /Information Technology/); assert.match(data.sectorSource, /sector index/);
+ assert.equal(r.status, 200); assert.equal(data.sector, 'XLK'); assert.match(data.sectorName, /Information Technology/); assert.match(data.sectorSource, /ETF proxy/);
  assert.equal(data.rows[0].open, 9.5); assert.equal(data.rows[0].high, 11); assert.equal(data.rows[0].low, 9); assert.equal(data.rows[0].close, 10);
- assert.equal(s.calls.length, 4); assert.equal(s.writes, 4); assert.equal(data.cacheHits, 0);
+ assert.equal(s.calls.length, 3); assert.equal(s.writes, 3); assert.equal(data.cacheHits, 0);
  for (const call of s.calls) { assert.equal(call.url.origin, 'https://financialmodelingprep.com'); assert.equal(call.url.searchParams.get('apikey'), s.env.FMP_API_KEY); assert.equal(call.options.redirect, 'manual'); assert.ok(call.options.signal); }
  const cached = await handleMarket(request(query + '&short=2&long=3'), s.env, authorized, s.fetcher);
- assert.equal((await cached.json()).cacheHits, 3); assert.equal(s.calls.length, 4); assert.equal(s.writes, 4);
+ assert.equal((await cached.json()).cacheHits, 3); assert.equal(s.calls.length, 3); assert.equal(s.writes, 3);
  assert.ok(!JSON.stringify(data).includes('test-sensitive-key')); assert.equal(r.headers.get('cache-control'), 'no-store');
 });
-test('ticker-only lookup resolves current company sector against the index-list, never an ETF', async () => {
+test('ticker-only lookup resolves and caches the current company sector ETF without index-list', async () => {
  const s = setup();
  for (let i = 0; i < 2; i++) {
   const r = await handleMarket(request('symbol=AAPL&from=2020-01-01&to=2020-01-10'), s.env, authorized, s.fetcher);
-  assert.equal(r.status, 200); assert.equal((await r.json()).sector, '^SP500-45');
+  assert.equal(r.status, 200); assert.equal((await r.json()).sector, 'XLK');
  }
- assert.equal(s.calls.length, 5); assert.equal(s.calls.filter(c => c.url.pathname.endsWith('/profile')).length, 1);
+ assert.equal(s.calls.length, 4); assert.equal(s.calls.filter(c => c.url.pathname.endsWith('/profile')).length, 1);
 });
-test('missing or ambiguous sector indices and ETF overrides fail without substituting another benchmark', async () => {
- for (const list of [[], [{ symbol: 'XLK', name: 'Technology ETF' }], [...catalogue, { ...catalogue[0], symbol: '^OTHER' }]]) {
-  const s = setup(), r = await handleMarket(request(), s.env, authorized, async (url, opts) => url.pathname.endsWith('/index-list') ? Response.json(list) : s.fetcher(url, opts));
-  const data = await r.json(); assert.equal(r.status, 502); assert.equal(data.code, 'FMP_SECTOR_INDEX_UNAVAILABLE'); assert.match(data.error, /No ETF/);
-  assert.equal(s.calls.filter(c => c.url.pathname.includes('historical')).length, 0);
- }
- const s = setup(), r = await handleMarket(request(query.replace('Information+Technology', 'XLK')), s.env, authorized, s.fetcher);
- assert.equal((await r.json()).code, 'FMP_SECTOR_INDEX_UNAVAILABLE'); assert.equal(s.calls.length, 1);
+test('all eleven sectors and profile aliases map to their supported ETFs', () => {
+ const expected = { 'Communication Services':'XLC','Consumer Discretionary':'XLY','Consumer Staples':'XLP',Energy:'XLE',Financials:'XLF','Health Care':'XLV',Industrials:'XLI','Information Technology':'XLK',Materials:'XLB','Real Estate':'XLRE',Utilities:'XLU' };
+ assert.deepEqual({...sectorEtfs},expected);
+ for (const [sector,symbol] of Object.entries(expected)) { assert.equal(resolveSectorEtf(sector).symbol,symbol);assert.equal(resolveSectorEtf(symbol).sector,sector); }
+ assert.equal(resolveSectorEtf('Technology').symbol,'XLK');assert.equal(resolveSectorEtf('Healthcare').symbol,'XLV');assert.equal(resolveSectorEtf('Consumer Cyclical').symbol,'XLY');
+ assert.throws(()=>resolveSectorEtf('constructor'));
 });
-test('catalogue matching excludes other indices and recognizes profile sector aliases', () => {
- const list = sectorIndices([...catalogue, { symbol: '^RETURN', name: 'S&P 500 Information Technology Total Return' }, { symbol: '^BAD', name: 'S&P 500 Health Care (Industry)' }]);
- assert.equal(list.length, 1); assert.equal(resolveSector(list, 'Technology').symbol, '^SP500-45');
- assert.equal(resolveSector(list, '^SP500-45').symbol, '^SP500-45'); assert.throws(() => resolveSector(list, 'constructor'));
+test('sector-index overrides are rejected before any I/O; explicit ETF overrides remain supported',async()=>{
+ const invalid=setup(),r=await handleMarket(request(query.replace('Information+Technology','^SP500-45')),invalid.env,authorized,invalid.fetcher);
+ assert.equal(r.status,400);assert.equal(invalid.reads,0);assert.equal(invalid.calls.length,0);
+ const s=setup(),ok=await handleMarket(request(query.replace('Information+Technology','XLK')),s.env,authorized,s.fetcher);assert.equal(ok.status,200);assert.equal((await ok.json()).sector,'XLK');assert.equal(s.calls.length,3);
 });
 test('stock history requires genuine consistent OHLC; close-only cache entries are refreshed', async () => {
  for (const patch of [{ open: undefined }, { high: 1 }, { low: 100 }, { open: NaN }]) assert.throws(() => normalize([{ ...bars[0], ...patch }], true, true));
@@ -93,13 +89,13 @@ test('missing table and absent bindings stop before provider requests without ex
 test('provider errors identify the failed history symbol and status without secrets or retries', async () => {
  for (const status of [302, 401, 402, 403, 429, 500]) {
   const s = setup(); let calls = 0;
-  const r = await handleMarket(request(), s.env, authorized, async (url, opts) => { calls++; return url.searchParams.get('symbol') === '^SP500-45' ? new Response('test-sensitive-key private body', { status }) : s.fetcher(url, opts); });
-  const data = await r.json(); assert.equal(r.status, 502); assert.equal(data.code, 'FMP_HTTP'); assert.match(data.error, /\^SP500-45/); assert.match(data.error, new RegExp(String(status))); assert.ok(!JSON.stringify(data).includes('test-sensitive-key')); assert.equal(calls, 3);
+  const r = await handleMarket(request(), s.env, authorized, async (url, opts) => { calls++; return url.searchParams.get('symbol') === 'XLK' ? new Response('test-sensitive-key private body', { status }) : s.fetcher(url, opts); });
+  const data = await r.json(); assert.equal(r.status, 502); assert.equal(data.code, 'FMP_HTTP'); assert.match(data.error, /XLK/); assert.match(data.error, new RegExp(String(status))); assert.ok(!JSON.stringify(data).includes('test-sensitive-key')); assert.equal(calls, 2);
  }
 });
-test('index catalogue denial identifies the catalogue; unsupported profiles and cache write failures are actionable', async () => {
- const s = setup(), denied = await handleMarket(request(), s.env, authorized, async () => new Response('private', { status: 403 }));
- assert.match((await denied.json()).error, /sector index lookup.*403/);
+test('profile denials, unsupported sectors and cache write failures are actionable', async () => {
+ const s = setup(), denied = await handleMarket(request('symbol=AAPL'), s.env, authorized, async () => new Response('private', { status: 403 }));
+ assert.match((await denied.json()).error, /Company sector lookup.*403/);
  const p = setup(), unknown = await handleMarket(request('symbol=AAPL'), p.env, authorized, async () => Response.json([{ symbol: 'AAPL', sector: 'Unknown' }]));
  assert.equal((await unknown.json()).code, 'FMP_SECTOR_UNAVAILABLE');
  const n = setup(), network = await handleMarket(request(), n.env, authorized, async () => { throw Error('test-sensitive-key'); });
@@ -109,7 +105,18 @@ test('index catalogue denial identifies the catalogue; unsupported profiles and 
 });
 test('refreshes stale histories and reuses identical stock/market symbols', async () => {
  const s = setup(), q = query + '&benchmark=AAPL';
- await handleMarket(request(q), s.env, authorized, s.fetcher); assert.equal(s.calls.length, 3);
+ await handleMarket(request(q), s.env, authorized, s.fetcher); assert.equal(s.calls.length, 2);
  for (const value of s.entries.values()) value.fetched_at = 0;
- await handleMarket(request(q), s.env, authorized, s.fetcher); assert.equal(s.calls.length, 6);
+ await handleMarket(request(q), s.env, authorized, s.fetcher); assert.equal(s.calls.length, 4);
+});
+test('VRT uses XLI and never requests the unavailable sector index, even when an old index catalogue is cached',async()=>{
+ const s=setup();s.entries.set(JSON.stringify(['fmp-sp500-sector-indices-v1']),{payload:JSON.stringify([{symbol:'^SP500-20',name:'S&P 500 Industrials (Sector)'}]),fetched_at:Date.now()});
+ const r=await handleMarket(request('symbol=VRT&from=2020-01-01&to=2020-01-10&short=2&long=3'),s.env,authorized,async(url,opts)=>{
+  if(url.pathname.endsWith('/profile'))return Response.json([{symbol:'VRT',sector:'Industrials'}]);
+  return s.fetcher(url,opts);
+ });
+ assert.equal(r.status,200);const data=await r.json();assert.equal(data.sector,'XLI');assert.match(data.sectorName,/ETF/);
+ const symbols=s.calls.map(c=>c.url.searchParams.get('symbol'));assert.deepEqual(symbols,['VRT','XLI','^GSPC']);
+ assert.equal(data.rows.at(-1).sectorRatio,1);assert.equal(data.rows.at(-1).distance,0);
+ assert.ok(s.calls.every(c=>!c.url.pathname.endsWith('/index-list') && !c.url.searchParams.get('symbol')?.startsWith('^SP500-')));
 });
