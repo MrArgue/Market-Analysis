@@ -1,5 +1,7 @@
 # Workbook trace and initial stock chart
 
+The original workbook trace below is unchanged. The current chart uses actual OHLC and FMP S&P 500 sector indices instead of the initial ETF mapping; see [the current chart update](CHART_UPDATES.md). The data/security bullets describe the initial release and are superseded by that update where noted.
+
 Source: `Technical Chart - GPT Upload with Static data.xlsm`, Sheet1. SHA-256:
 `c94bc6647d5919d387c3bad74e68b164c658e5958c23b7ca0bd11ed8d8a101f2`.
 Read formulas and saved calculation values without running VBA or the Excel add-in. The uploaded workbook and extracted market history are not committed to this public repository.

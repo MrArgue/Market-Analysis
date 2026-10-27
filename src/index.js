@@ -1,6 +1,8 @@
 import { handleDiagnostics } from './diagnostics.js';
 import { chartPage, chartScript } from './chart-page.js';
 import { handleMarket } from './market.js';
+import { chartMathScript } from './chart-math.js';
+import { sampleScript } from './sample-data.js';
 
 export default {
   fetch(request, env = {}, ctx) {
@@ -15,9 +17,9 @@ export default {
     if (pathname === '/health') {
       response = Response.json({ status: 'ok' }, { headers: { 'Cache-Control': 'no-store' } });
     } else if (pathname === '/') {
-      response = new Response(chartPage, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff' } });
-    } else if (pathname === '/chart.js') {
-      response = new Response(chartScript, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+      response = new Response(chartPage, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self' https://seia.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff' } });
+    } else if (pathname === '/chart.js' || pathname === '/chart-math.js' || pathname === '/sample-data.js') {
+      response = new Response(pathname === '/chart.js' ? chartScript : pathname === '/chart-math.js' ? chartMathScript : sampleScript, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
     } else {
       response = new Response('Not Found', { status: 404 });
     }
