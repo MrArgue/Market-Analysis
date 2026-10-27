@@ -8,7 +8,7 @@ test('homepage displays the responsive technical chart app', async () => {
   const response = request('/');
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/html/);
-  assert.match(await response.text(), /Technical strength, in context/);
+  assert.match(await response.text(), /Technical overview/);
 });
 
 test('health returns an uncached JSON status', async () => {
@@ -30,4 +30,9 @@ test('HEAD preserves headers without a body', async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /application\/json/);
   assert.equal(await response.text(), '');
+});
+
+test('chart modules are served directly and font policy allows the reference fonts', async () => {
+ for (const path of ['/chart.js', '/chart-math.js']) { const r = request(path);assert.equal(r.status,200);assert.match(r.headers.get('content-type'),/javascript/);assert.ok((await r.text()).includes('wholeAxis')); }
+ const home = request('/');assert.match(home.headers.get('Content-Security-Policy'),/font-src 'self' https:\/\/seia.com/);
 });

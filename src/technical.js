@@ -11,13 +11,14 @@ export function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 }
 
-export function normalize(rows, volume = false) {
+export function normalize(rows, volume = false, requireOhlc = false) {
   if (!Array.isArray(rows) || !rows.length || rows.length > 25000) throw new Error('History is unavailable.');
   const seen = new Set();
   return rows.map(r => {
     if (!validDate(r.date) || !Number.isFinite(r.close) || r.close <= 0 || (volume && (!Number.isFinite(r.volume) || r.volume < 0)) || seen.has(r.date)) throw new Error('Invalid or duplicate history observation.');
+    if (requireOhlc && (![r.open, r.high, r.low].every(x => Number.isFinite(x) && x > 0) || r.high < Math.max(r.open, r.close) || r.low > Math.min(r.open, r.close) || r.low > r.high)) throw new Error('Invalid OHLC observation.');
     seen.add(r.date);
-    return { date: r.date, close: r.close, ...(volume || (Number.isFinite(r.volume) && r.volume >= 0) ? { volume: r.volume } : {}) };
+    return { date: r.date, close: r.close, ...(Number.isFinite(r.open) && Number.isFinite(r.high) && Number.isFinite(r.low) ? { open: r.open, high: r.high, low: r.low } : {}), ...(volume || (Number.isFinite(r.volume) && r.volume >= 0) ? { volume: r.volume } : {}) };
   }).sort((a, b) => a.date.localeCompare(b.date));
 }
 
