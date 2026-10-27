@@ -1,6 +1,6 @@
 import { calculate, normalize, validDate, methodology } from './technical.js';
 import { verifyAccess } from './access.js';
-import { sectorAliases, sectorIndices, resolveSector } from './sectors.js';
+import { sectorAliases, sectorEtfs, resolveSectorEtf } from './sectors.js';
 
 const symbolPattern = /^[A-Z^][A-Z0-9.^-]{0,19}$/;
 const reply = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -14,7 +14,7 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
   let sector = (p.get('sector') || '').trim();
   const benchmark = (p.get('benchmark') || '^GSPC').toUpperCase();
   const from = p.get('from') || '2000-01-01', to = p.get('to') || new Date().toISOString().slice(0, 10);
-  if ((![symbol, benchmark].every(s => symbolPattern.test(s)) || (sector && !Object.hasOwn(sectorAliases, sector) && !symbolPattern.test(sector))) || !validDate(from) || !validDate(to) || from > to || Date.parse(to) - Date.parse(from) > 40 * 366 * 86400000) return reply({ error: 'Enter valid symbols and a date range of at most 40 years.' }, 400);
+  if ((![symbol, benchmark].every(s => symbolPattern.test(s)) || (sector && !Object.hasOwn(sectorAliases, sector) && !Object.values(sectorEtfs).includes(sector))) || !validDate(from) || !validDate(to) || from > to || Date.parse(to) - Date.parse(from) > 40 * 366 * 86400000) return reply({ error: 'Enter valid symbols and a date range of at most 40 years.' }, 400);
   let options;
   try { options = methodology(Object.fromEntries(['short', 'long', 'lookback', 'sigma', 'sell', 'buy', 'flat'].filter(k => p.has(k)).map(k => [k, k === 'flat' ? p.get(k) : Number(p.get(k))]))); }
   catch { return reply({ error: 'Invalid methodology settings.' }, 400); }
@@ -23,7 +23,7 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
   let cacheHits = 0;
   let stage = 'cache-read', activeSymbol = symbol, httpStatus = null, failure = null;
   async function provider(path, params) {
-    stage = path === 'profile' ? 'sector-profile' : path === 'index-list' ? 'sector-index' : 'price-history';
+    stage = path === 'profile' ? 'sector-profile' : 'price-history';
     activeSymbol = params.symbol;
     httpStatus = null;
     failure = null;
@@ -53,7 +53,7 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
     return rows;
   }
   try {
-    const sectorSource = 'FMP S&P 500 sector index';
+    const sectorSource = 'Sector ETF proxy';
     if (!sector) {
       const key = JSON.stringify(['fmp-profile-sector-v1', symbol]);
       stage = 'cache-read';
@@ -70,27 +70,14 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
       }
       sector = name;
     }
-    const listKey = JSON.stringify(['fmp-sp500-sector-indices-v1']);
-    stage = 'cache-read';
-    const cachedList = await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(listKey).first();
-    let indices;
-    if (cachedList && now - cachedList.fetched_at < 24 * 3600000) {
-      try { indices = sectorIndices(JSON.parse(cachedList.payload)); } catch { /* Refresh invalid catalogue. */ }
-    }
-    if (!indices) {
-      const raw = await provider('index-list', {});
-      indices = sectorIndices(raw);
-      await writeCache(listKey, indices);
-    }
-    stage = 'sector-index'; httpStatus = 200; failure = null;
-    const sectorIndex = resolveSector(indices, sector);
-    sector = sectorIndex.symbol;
-    // At most a profile, catalogue, and three history requests. No retries or ETF fallback.
+    const sectorBenchmark = resolveSectorEtf(sector);
+    sector = sectorBenchmark.symbol;
+    // At most one company profile and three distinct histories; no sector-index requests.
     const histories = new Map();
     for (const ticker of new Set([symbol, sector, benchmark])) histories.set(ticker, await history(ticker));
     stage = 'calculation';
     const result = calculate(histories.get(symbol), histories.get(sector), histories.get(benchmark), options);
-    return reply({ symbol, sector, sectorSource, sectorName: sectorIndex.name, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
+    return reply({ symbol, sector, sectorSource, sectorName: sectorBenchmark.name, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
   } catch (error) {
     // Use only controlled labels/statuses. Never return raw provider bodies, URLs or exceptions.
     let message, code, status = 502;
@@ -102,8 +89,8 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
     } else if (stage === 'cache-write') {
       code = 'CACHE_WRITE_FAILED'; status = 503;
       message = 'Market data was received, but could not be saved. Check the market cache table and D1 database availability.';
-    } else if (stage === 'sector-profile' || stage === 'price-history' || stage === 'sector-index') {
-      const label = stage === 'sector-profile' ? 'Company sector lookup' : stage === 'sector-index' ? 'S&P 500 sector index lookup' : `Price history for ${activeSymbol}`;
+    } else if (stage === 'sector-profile' || stage === 'price-history') {
+      const label = stage === 'sector-profile' ? 'Company sector lookup' : `Price history for ${activeSymbol}`;
       code = 'FMP_REQUEST_FAILED';
       if (failure === 'sector') {
         code = 'FMP_SECTOR_UNAVAILABLE';
@@ -115,9 +102,6 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
       } else if (httpStatus === null) {
         code = 'FMP_NETWORK';
         message = `${label}: FMP could not be reached or the 15-second request timed out. No retry was attempted.`;
-      } else if (stage === 'sector-index') {
-        code = 'FMP_SECTOR_INDEX_UNAVAILABLE';
-        message = 'FMP did not return a unique S&P 500 index for this sector. Check index-list coverage. No ETF was substituted.';
       } else {
         code = 'FMP_INVALID_HISTORY';
         message = `${label}: FMP returned no usable observations. Try a shorter date range and verify symbol coverage. The response may contain missing or invalid data.`;

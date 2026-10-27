@@ -1,6 +1,6 @@
 # Russell 1000 Research Platform
 
-Responsive OHLC stock chart with S&P 500 sector-index comparisons, served by the existing Cloudflare Worker, with FMP history and a D1 cache. See [the chart controls and sector-index update](CHART_UPDATES.md) and [the workbook formula audit](TECHNICAL_METHODOLOGY.md).
+Responsive OHLC stock chart with sector ETF comparisons, served by the existing Cloudflare Worker, with FMP history and a D1 cache. See [the chart controls and sector ETF update](CHART_UPDATES.md) and [the workbook formula audit](TECHNICAL_METHODOLOGY.md).
 
 - `GET /`: displays the technical chart app; page load performs no market requests.
 - `GET /chart.js`: serves the chart controls without external scripts.
