@@ -24,12 +24,22 @@ function setup() {
  };
  return { env, entries, calls, fetcher, get writes() { return writes; }, get reads() { return reads; } };
 }
-test('market API fails closed before data access for absent identity, wrong user and spoofed headers', async () => {
- for (const ctx of [undefined, {}, { access: { getIdentity: async () => ({ email: 'other@example.com' }) } }, { access: { getIdentity: async () => { throw Error('private'); } } }]) {
-  const s = setup(), r = await handleMarket(request(undefined, { headers: { 'Cf-Access-Authenticated-User-Email': 'owner@example.com' } }), s.env, ctx, s.fetcher);
-  assert.ok([401, 403].includes(r.status)); assert.equal(s.reads, 0); assert.equal(s.calls.length, 0);
+test('public chart data loads without an Access identity or authorized-email configuration', async () => {
+ for (const ctx of [undefined, {}, { access: { getIdentity: async () => { throw Error('Identity lookup must not be called'); } } }]) {
+  const s = setup(); delete s.env.DIAGNOSTICS_AUTHORIZED_EMAIL;
+  const r = await handleMarket(request(), s.env, ctx, s.fetcher);
+  assert.equal(r.status, 200); const data = await r.json();assert.equal(data.sector,'XLK');assert.equal(data.rows.length,10);
+  assert.ok(!JSON.stringify(data).includes(s.env.FMP_API_KEY));
  }
- const s = setup(); assert.equal((await worker.fetch(request(), s.env, {})).status, 401);
+});
+test('Worker entry point serves anonymous chart requests from the cache while diagnostics stay protected', async () => {
+ const s = setup();await handleMarket(request(), s.env, undefined, s.fetcher);
+ const r = await worker.fetch(request(), s.env, {});assert.equal(r.status,200);assert.equal((await r.json()).cacheHits,3);
+ for (const path of ['/diagnostics','/diagnostics/client.js','/diagnostics/d1','/diagnostics/fmp']) {
+  const response=await worker.fetch(new Request('https://example.com'+path,{headers:{'Cf-Access-Authenticated-User-Email':'owner@example.com'}}),s.env,{});
+  assert.equal(response.status,401);
+ }
+ assert.equal(s.calls.length,3);
 });
 test('invalid queries and non-GET methods never reach D1 or FMP', async () => {
  for (const q of ['symbol=AAPL&sector=Technology&from=2020-02-30', 'symbol=AAPL&short=0', 'symbol=../../secrets', 'symbol=AAPL&from=2021-01-01&to=2020-01-01']) {
