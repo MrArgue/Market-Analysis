@@ -21,25 +21,34 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
   if (!env.DB?.prepare || !env.FMP_API_KEY?.trim()) return reply({ error: 'Market data requires the existing D1 binding and FMP secret.' }, 503);
   const now = Date.now(), ttl = 6 * 3600000;
   let cacheHits = 0;
+  let stage = 'cache-read', activeSymbol = symbol, httpStatus = null, failure = null;
   async function provider(path, params) {
+    stage = path === 'profile' ? 'sector-profile' : 'price-history';
+    activeSymbol = params.symbol;
+    httpStatus = null;
+    failure = null;
     const url = new URL('https://financialmodelingprep.com/stable/' + path);
     for (const [k, v] of Object.entries({ ...params, apikey: env.FMP_API_KEY })) url.searchParams.set(k, v);
     const res = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
+    httpStatus = res.status;
     if (!res.ok) throw new Error('upstream');
-    return res.json();
+    try { return await res.json(); }
+    catch { failure = 'invalid-json'; throw new Error('response'); }
   }
   async function writeCache(key, payload) {
+    stage = 'cache-write';
     await env.DB.prepare('INSERT INTO market_history_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at').bind(key, JSON.stringify(payload), now).run();
   }
   async function history(ticker) {
     const needsVolume = ticker === symbol;
     const key = JSON.stringify(['fmp-eod-v1', ticker, from, to]);
+    stage = 'cache-read';
     const cached = await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();
     if (cached && now - cached.fetched_at < ttl) {
       try { const rows = normalize(JSON.parse(cached.payload), needsVolume); cacheHits++; return rows; } catch { /* Refresh invalid cache. */ }
     }
     const rows = normalize(await provider('historical-price-eod/full', { symbol: ticker, from, to }), needsVolume).filter(r => r.date >= from && r.date <= to);
-    if (!rows.length) throw new Error('empty');
+    if (!rows.length) { failure = 'empty'; throw new Error('empty'); }
     await writeCache(key, rows);
     return rows;
   }
@@ -47,14 +56,15 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
     const sectorSource = sector ? 'User-selected benchmark' : 'Current company sector mapped to ETF proxy';
     if (!sector) {
       const key = JSON.stringify(['fmp-profile-sector-v1', symbol]);
-      const cached = await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();
+      stage = 'cache-read';
+    const cached = await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();
       let name;
       if (cached && now - cached.fetched_at < ttl) {
         try { name = JSON.parse(cached.payload); } catch { /* Refresh invalid cache. */ }
       }
-      if (!sectorEtfs[name]) {
+      if (!Object.hasOwn(sectorEtfs, name)) {
         const profile = await provider('profile', { symbol });
-        if (!Array.isArray(profile) || profile.length !== 1 || profile[0].symbol !== symbol || !sectorEtfs[profile[0].sector]) throw new Error('sector');
+        if (!Array.isArray(profile) || profile.length !== 1 || profile[0].symbol !== symbol || !Object.hasOwn(sectorEtfs, profile[0]?.sector)) { failure = 'sector'; throw new Error('sector'); }
         name = profile[0].sector;
         await writeCache(key, name);
       }
@@ -63,10 +73,41 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
     // Sequential: at most one profile and three history requests; no retries or redirects.
     const histories = new Map();
     for (const ticker of new Set([symbol, sector, benchmark])) histories.set(ticker, await history(ticker));
+    stage = 'calculation';
     const result = calculate(histories.get(symbol), histories.get(sector), histories.get(benchmark), options);
     return reply({ symbol, sector, sectorSource, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
-  } catch {
-    // Never expose exception messages, request URLs, response bodies, or credentials.
-    return reply({ error: 'History could not be loaded. Check the cache migration, FMP symbol coverage, subscription and service availability.' }, 502);
+  } catch (error) {
+    // Use only controlled labels/statuses. Never return raw provider bodies, URLs or exceptions.
+    let message, code, status = 502;
+    if (stage === 'cache-read') {
+      const missing = /no such table:\s*market_history_cache/i.test(String(error?.message));
+      code = missing ? 'CACHE_MIGRATION_REQUIRED' : 'CACHE_READ_FAILED';
+      message = missing ? 'The market cache table is missing. Run migration 0002_market_history.sql in market-research-db, then try again.' : 'The market cache could not be read. Check the existing D1 database connection.';
+      status = 503;
+    } else if (stage === 'cache-write') {
+      code = 'CACHE_WRITE_FAILED'; status = 503;
+      message = 'Market data was received, but could not be saved. Check the market cache table and D1 database availability.';
+    } else if (stage === 'sector-profile' || stage === 'price-history') {
+      const label = stage === 'sector-profile' ? 'Company sector lookup' : `Price history for ${activeSymbol}`;
+      code = 'FMP_REQUEST_FAILED';
+      if (failure === 'sector') {
+        code = 'FMP_SECTOR_UNAVAILABLE';
+        message = 'The company profile did not return a supported sector. Enter a sector benchmark manually, such as XLK for technology.';
+      } else if (httpStatus !== null && (httpStatus < 200 || httpStatus >= 300)) {
+        code = 'FMP_HTTP';
+        const reason = httpStatus === 401 ? 'rejected the API credentials' : [402, 403].includes(httpStatus) ? 'denied access; check subscription coverage for this symbol and date range' : httpStatus === 429 ? 'rate limit was reached; wait before trying again' : httpStatus >= 300 && httpStatus < 400 ? 'returned a redirect, which was not followed' : 'returned an unsuccessful response';
+        message = `${label}: FMP ${reason} (HTTP ${httpStatus}).`;
+      } else if (httpStatus === null) {
+        code = 'FMP_NETWORK';
+        message = `${label}: FMP could not be reached or the 15-second request timed out. No retry was attempted.`;
+      } else {
+        code = 'FMP_INVALID_HISTORY';
+        message = `${label}: FMP returned no usable observations. Try a shorter date range and verify symbol coverage. The response may contain missing or invalid data.`;
+      }
+    } else {
+      code = 'CALCULATION_FAILED';
+      message = 'History was received, but the technical indicators could not be calculated from these observations.';
+    }
+    return reply({ error: message, code }, status);
   }
 }
