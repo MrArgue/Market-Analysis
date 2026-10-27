@@ -50,7 +50,7 @@ test('reuses identical ticker series, refreshes stale cache, never retries or le
  }
 });
 test('missing migration fails before FMP; missing bindings fail before all I/O',async()=>{
- const s=setup();s.env.DB.prepare=()=>{throw Error('private schema')};const r=await handleMarket(request(),s.env,authorized,s.fetch);assert.equal(r.status,502);assert.equal(s.calls.length,0);
+ const s=setup();s.env.DB.prepare=()=>{throw Error('private schema')};const r=await handleMarket(request(),s.env,authorized,s.fetch);assert.equal(r.status,503);assert.equal(s.calls.length,0);
  for(const key of ['DB','FMP_API_KEY']){const fresh=setup();delete fresh.env[key];const r=await handleMarket(request(),fresh.env,authorized,fresh.fetch);assert.equal(r.status,503);assert.equal(fresh.calls.length,0)}
 });
 test('ticker-only requests resolve and cache the current sector ETF; unsupported sectors fail clearly',async()=>{
@@ -66,4 +66,28 @@ test('ticker-only requests resolve and cache the current sector ETF; unsupported
 test('benchmark series need no volume but stock volume remains required',async()=>{
  const s=setup();const r=await handleMarket(request(),s.env,authorized,async url=>Response.json(url.searchParams.get('symbol')==='AAPL'?bars:bars.map(({volume,...rest})=>rest)));
  assert.equal(r.status,200);
+});
+
+test('missing table has an actionable code without leaking D1 errors', async()=>{
+ const s=setup();s.env.DB.prepare=()=>{throw Error('D1_ERROR: no such table: market_history_cache test-sensitive-key')};
+ const r=await handleMarket(request(),s.env,authorized,s.fetch),data=await r.json();
+ assert.equal(r.status,503);assert.equal(data.code,'CACHE_MIGRATION_REQUIRED');assert.match(data.error,/0002_market_history.sql/);assert.ok(!data.error.includes('test-sensitive-key'));assert.equal(s.calls.length,0);
+});
+test('HTTP errors name the failed symbol and status without leaking provider bodies',async()=>{
+ for(const status of [401,402,403,429,500]){
+  const s=setup();let calls=0;
+  const r=await handleMarket(request(),s.env,authorized,async(url,options)=>{
+   calls++;return url.searchParams.get('symbol')==='XLK'?new Response('test-sensitive-key private body',{status}):s.fetch(url,options);
+  });
+  const data=await r.json();assert.equal(r.status,502);assert.equal(data.code,'FMP_HTTP');assert.match(data.error,/XLK/);assert.match(data.error,new RegExp(String(status)));assert.ok(!JSON.stringify(data).includes('test-sensitive-key'));assert.equal(calls,2);
+ }
+});
+test('separates sector profile, network, invalid history and cache-write failures',async()=>{
+ const p=setup(),profile=await handleMarket(request('symbol=AAPL'),p.env,authorized,async()=>new Response('private',{status:403}));
+ assert.match((await profile.json()).error,/Company sector lookup.*403/);
+ const n=setup(),network=await handleMarket(request(),n.env,authorized,async()=>{throw Error('test-sensitive-key')});
+ assert.equal((await network.json()).code,'FMP_NETWORK');
+ const bad=setup(),invalid=await handleMarket(request(),bad.env,authorized,async()=>Response.json([]));assert.equal((await invalid.json()).code,'FMP_INVALID_HISTORY');
+ const w=setup();w.env.DB.prepare=()=>({bind:()=>({first:async()=>null,run:async()=>{throw Error('test-sensitive-key')}})});
+ const write=await handleMarket(request(),w.env,authorized,w.fetch);assert.equal(write.status,503);const data=await write.json();assert.equal(data.code,'CACHE_WRITE_FAILED');assert.ok(!data.error.includes('test-sensitive-key'));assert.equal(w.calls.length,1);
 });
