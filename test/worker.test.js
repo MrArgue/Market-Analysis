@@ -4,11 +4,11 @@ import worker from '../src/index.js';
 
 const request = (path, method = 'GET') => worker.fetch(new Request(`https://example.com${path}`, { method }));
 
-test('homepage displays the connection confirmation', async () => {
+test('homepage displays the responsive technical chart app', async () => {
   const response = request('/');
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/html/);
-  assert.match(await response.text(), /Russell 1000 Research Platform — Connection Successful/);
+  assert.match(await response.text(), /Technical strength, in context/);
 });
 
 test('health returns an uncached JSON status', async () => {
