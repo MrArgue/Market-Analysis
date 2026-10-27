@@ -1,13 +1,11 @@
 import { calculate, normalize, validDate, methodology } from './technical.js';
-import { verifyAccess } from './access.js';
 import { sectorAliases, sectorEtfs, resolveSectorEtf } from './sectors.js';
 
 const symbolPattern = /^[A-Z^][A-Z0-9.^-]{0,19}$/;
 const reply = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 
 export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
-  const access = await verifyAccess(request, env, ctx);
-  if (access.status !== 200) return reply({ error: access.error }, access.status);
+  // Public chart data; operator diagnostics retain their separate Access check.
   if (request.method !== 'GET') return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET' } });
   const p = new URL(request.url).searchParams;
   const symbol = (p.get('symbol') || '').toUpperCase();

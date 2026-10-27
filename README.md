@@ -4,7 +4,7 @@ Responsive OHLC stock chart with sector ETF comparisons, served by the existing 
 
 - `GET /`: displays the technical chart app; page load performs no market requests.
 - `GET /chart.js`: serves the chart controls without external scripts.
-- `GET /api/chart`: Access-authenticated market history, six-component score and extreme indicators. Requires the existing secret/binding and separately approved cache migration.
+- `GET /api/chart`: Public market history, six-component score and extreme indicators. Requires the existing secret/binding and separately approved cache migration.
 - `GET /health`: returns HTTP 200 with `{"status":"ok"}` and caching disabled.
 - Other paths return 404; unsupported methods return 405.
 
@@ -63,3 +63,9 @@ Do not add `DB`, `FMP_API_KEY`, or production resources to Preview settings. A w
 ## Access-protected diagnostic page
 
 See [ACCESS_DIAGNOSTICS.md](ACCESS_DIAGNOSTICS.md) for the existing All traffic Worker Access protection, authorized-email setting, and separate manually confirmed D1 and FMP actions. Diagnostics fail closed until configured; no tests run on page load or deployment.
+
+## Public chart access
+
+The chart page and `/api/chart` do not require a signed-in identity. `/diagnostics` routes retain their native Access identity and authorized-email checks and reject anonymous requests. The FMP key stays server-side. Input validation, error redaction, read-only methods and the existing D1 history cache remain in place. Anonymous requests use the configured FMP allowance; no rate-limit resource or new infrastructure is added.
+
+Worker-wide Access must be disabled for public chart use, unless a broader account/hostname policy still requires sign-in. To use operator diagnostics, protect only `/diagnostics` and `/diagnostics/*` through a separate hostname/path Access application. Without a trusted identity these routes fail closed.
