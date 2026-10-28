@@ -6,6 +6,7 @@ export const sectorPage=head+`<style>
 </style></head><body><header class="topbar"><div class="brand">Market Analysis <small>TECHNICAL RESEARCH</small></div><a href="/diagnostics">Connection diagnostics ↗</a></header>`+appNavigation('sectors')+`<main class="sector-main"><div class="sector-heading"><div><p class="eyebrow">US equity performance</p><h1>US Sectors/Industries</h1><p id="source-label">Sector and industry returns</p></div><div class="sector-actions"><button id="load-sectors" type="button">Load returns</button></div></div><p class="sector-status" id="sector-status" role="status" aria-live="polite">Load returns to view the sector and industry table.</p><div class="return-legend"><span class="return-best">Top 20% of industries</span><span class="return-worst">Bottom 20% of industries</span><span>Ranked separately within each return column</span></div><div id="sector-results" class="sector-grid"><div class="return-card empty-table">Returns will appear here after loading.</div></div><details class="sector-method"><summary>Return methodology and data coverage</summary><div id="sector-method"></div></details></main><script type="module" src="/sectors.js"></script></body></html>`;
 export const sectorScript=String.raw`
 const $=id=>document.getElementById(id);
+let manualRefresh=false;
 const columns=[['day','1-Day'],['five','5-Day'],['mtd','MTD'],['fourWeeks','4-Wk'],['threeMonths','3M'],['ytd','YTD'],['year','1-Year']];
 function element(tag,text,className){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(className)n.className=className;return n;}
 function format(value){return Number.isFinite(value)?(value>0?'+':'')+value.toFixed(1)+'%':'—';}
@@ -49,6 +50,7 @@ function render(data){
  $('sector-status').textContent=data.status;
 }
 $('load-sectors').onclick=async()=>{
+ manualRefresh=true;
  const button=$('load-sectors');button.disabled=true;$('sector-status').textContent='Loading sector and industry returns…';
  try{
   let response=await fetch('/api/sectors',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'start'})});
@@ -64,7 +66,7 @@ $('load-sectors').onclick=async()=>{
  finally{button.disabled=false;}
 };
 if(typeof window!=='undefined'){
- fetch('/api/sectors').then(r=>r.ok?r.json():null).then(data=>{if(data?.state==='ready'&&!$('load-sectors').disabled)render(data);}).catch(()=>{});
+ fetch('/api/sectors').then(r=>r.ok?r.json():null).then(data=>{if(data?.state==='ready'&&!manualRefresh&&!$('load-sectors').disabled)render(data);}).catch(()=>{});
 }
 `;
 // Opening the tab reads a stored snapshot only; it does not fetch FMP data.

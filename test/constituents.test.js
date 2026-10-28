@@ -65,3 +65,8 @@ test('saved inputs refresh expired report with fresh quotes in one request and z
  s.reset();const refreshed=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now+61000)).json();assert.equal(refreshed.state,'ready');assert.equal(refreshed.refresh.mode,'saved-inputs');assert.equal(s.calls.filter(p=>p.endsWith('/historical-price-eod/full')).length,historyCalls);assert.ok(s.queries<50);
  const calls=s.calls.length;const saved=await(await handleConstituents(new Request('https://example.com/api/sectors'),s.env,s.fetcher,now+180000)).json();assert.equal(saved.state,'ready');assert.match(saved.status,/Saved snapshot/);assert.equal(s.calls.length,calls);
 });
+test('a changed baseline invalidates the prepared input pack',async()=>{
+ const s=setup(3);let data=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now)).json();await handleConstituents(s.request({action:'step',id:data.id}),s.env,s.fetcher,now);
+ const key='constituent-inputs-v2:2026-10-28',stored=await s.env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();const pack=JSON.parse(stored.payload);pack.baselines.year='2025-10-27';await s.env.DB.prepare('INSERT INTO market_history_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)').bind(key,JSON.stringify(pack),now).run();
+ data=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now+61000)).json();assert.equal(data.state,'loading');assert.equal(data.loaded,0);
+});

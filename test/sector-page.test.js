@@ -44,3 +44,10 @@ test('S&P 500 is first in the left table and column split minimizes row imbalanc
  const difference=Math.abs(rows[0].length-rows[1].length),total=groups.reduce((n,g)=>n+1+g.industries.length,0);let left=1;
  for(let i=1;i<groups.length;i++){left+=1+groups[i-1].industries.length;assert.ok(difference<=Math.abs(left-(total-left+1)));}
 });
+test('a slow saved snapshot cannot replace a newer manual refresh',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()]));let resolveSaved;
+ const report=status=>({state:'ready',groups:[{name:'Sector',industries:[]}],sourceLabel:'TEST',methodology:'TEST',status});
+ vm.runInNewContext(sectorScript,{window:{},document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>options?{ok:true,json:async()=>report('Fresh prices')}:new Promise(resolve=>{resolveSaved=resolve;})});
+ await nodes['load-sectors'].onclick();resolveSaved({ok:true,json:async()=>report('Older saved prices')});await new Promise(resolve=>setImmediate(resolve));assert.equal(nodes['sector-status'].textContent,'Fresh prices');
+});
