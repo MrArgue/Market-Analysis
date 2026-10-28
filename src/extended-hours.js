@@ -1,9 +1,8 @@
 // Standard US equity session in exchange time; DST follows New York/Pacific.
 export function marketSession(time) {
  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(time));
- const value=type=>parts.find(p=>p.type===type).value;
- if(['Sat','Sun'].includes(value('weekday'))) return 'closed';
- const minute=Number(value('hour'))*60+Number(value('minute'));
+ if(['Sat','Sun'].includes(parts.find(p=>p.type==='weekday').value)) return 'closed';
+ const minute=Number(parts.find(p=>p.type==='hour').value)*60+Number(parts.find(p=>p.type==='minute').value);
  return minute<570?'pre-market':minute<960?'regular':'after-hours';
 }
 export function extendedTrade(payload,symbol,now) {
