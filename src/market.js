@@ -1,3 +1,4 @@
+import { marketSession, extendedTrade } from './extended-hours.js';
 import { calculate, normalize, validDate, methodology } from './technical.js';
 import { sectorAliases, sectorEtfs, resolveSectorEtf } from './sectors.js';
 import { quoteBar, exchangeDate, sessionHasStarted, currentSessionBar, mergeCurrentBar } from './current-quote.js';
@@ -33,12 +34,6 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch, nowMs =
     if (!res.ok) throw new Error('upstream');
     try { return await res.json(); }
     catch { failure = 'invalid-json'; throw new Error('response'); }
-  }
-  if (p.get('extendedPreflight') === '1' && symbol === 'AAPL') {
-    try {
-      const raw=await provider('aftermarket-trade',{symbol:'AAPL'}),q=Array.isArray(raw)&&raw.length===1?raw[0]:null;
-      return reply({endpoint:'/stable/aftermarket-trade',http:httpStatus,checkedAt:new Date(now).toISOString(),symbol:q?.symbol,price:q?.price,timestamp:q?.timestamp,tradeSize:q?.tradeSize});
-    } catch { return reply({endpoint:'/stable/aftermarket-trade',http:httpStatus,status:'unavailable'}); }
   }
   async function writeCache(key, payload) {
     stage = 'cache-write';
@@ -124,7 +119,30 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch, nowMs =
       const last=result.rows.find(r=>r.date===today);
       if(last) {last.provisional=true;last.quoteAsOf=currentDay.asOf;}
     }
-    return reply({ currentDay, symbol, sector, sectorSource, sectorName: sectorBenchmark.name, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
+    let extendedHours={state:'not-requested'};
+    const session=marketSession(now),last=result.rows.at(-1);
+    if(from<=today && to>=today && ['pre-market','after-hours'].includes(session)) {
+      extendedHours={state:'unavailable'};
+      // A post-market comparison requires today's regular close, never yesterday's.
+      if(last?.close>0 && (session==='pre-market'?last.date<today:last.date===today)) {
+        try {
+          const key=JSON.stringify(['fmp-aftermarket-trade-v1',symbol]);
+          stage='cache-read';
+          const cached=await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();
+          let trade=null;
+          if(cached && now-cached.fetched_at<60000) {
+            try {trade=extendedTrade(JSON.parse(cached.payload),symbol,now);} catch { /* Refresh bad cache. */ }
+          }
+          if(!trade) {
+            const raw=await provider('aftermarket-trade',{symbol});
+            trade=extendedTrade(raw,symbol,now);
+            if(trade)await writeCache(key,[{symbol,price:trade.price,timestamp:Date.parse(trade.asOf)}]);
+          }
+          if(trade)extendedHours={state:'available',...trade,regularClose:last.close,changePercent:(trade.price/last.close-1)*100};
+        } catch { /* Extended hours is optional; regular chart remains usable. */ }
+      }
+    }
+    return reply({ extendedHours, currentDay, symbol, sector, sectorSource, sectorName: sectorBenchmark.name, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
   } catch (error) {
     // Use only controlled labels/statuses. Never return raw provider bodies, URLs or exceptions.
     let message, code, status = 502;
