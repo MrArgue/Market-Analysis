@@ -27,11 +27,15 @@ export function dateTicks(rows, width) {
   return indices.map(index => ({ index, label: new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...(span > 4 * 365 * 86400000 ? { year: 'numeric', month: 'short' } : span > 365 * 86400000 ? { year: '2-digit', month: 'short' } : { month: 'short', day: 'numeric' }) }).format(new Date(rows[index].date + 'T00:00:00Z')) }));
 }
 export function aggregateBars(rows, maxBars) {
-  const size = Math.max(1, Math.ceil(rows.length / Math.max(1, maxBars))), bars = [];
-  for (let i = 0; i < rows.length; i += size) {
-    const group = rows.slice(i, i + size);
+  // Keep a provisional current-day bar separate even when old sessions are grouped.
+  const current = rows.at(-1)?.provisional ? rows.at(-1) : null;
+  const history = current ? rows.slice(0,-1) : rows;
+  const size = Math.max(1, Math.ceil(history.length / Math.max(1, maxBars - (current ? 1 : 0)))), bars = [];
+  for (let i = 0; i < history.length; i += size) {
+    const group = history.slice(i, i + size);
     bars.push({ index: i + (group.length - 1) / 2, open: group[0].open, high: Math.max(...group.map(r => r.high)), low: Math.min(...group.map(r => r.low)), close: group.at(-1).close, observations: group.length });
   }
+  if(current) bars.push({index:rows.length-1,open:current.open,high:current.high,low:current.low,close:current.close,observations:1,provisional:true});
   return { size, bars };
 }
 export const chartMathScript = [wholeAxis, presetStart, dateTicks, aggregateBars].map(fn => fn.toString()).join('\n') + '\nexport { wholeAxis, presetStart, dateTicks, aggregateBars };';

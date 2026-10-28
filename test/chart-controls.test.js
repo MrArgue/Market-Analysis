@@ -39,3 +39,9 @@ test('client guards crossed handles and invalid view dates',async()=>{
  h.nodes['range-end'].value=0;h.nodes['range-end'].oninput();assert.equal(Number(h.nodes['range-start'].value),Number(h.nodes['range-end'].value));
  h.nodes.start.value='2026-01-01';h.nodes.end.value='2025-01-01';h.nodes.range.onclick();assert.match(h.nodes.detail.textContent,/Choose a date range/);
 });
+test('current-day prices and quote time are clearly marked provisional in the client',async()=>{
+ const h=harness(),last=h.data.rows.at(-1);last.provisional=true;last.quoteAsOf=last.date+'T18:52:00Z';h.data.currentDay={state:'included',asOf:last.quoteAsOf};
+ await h.nodes.query.onsubmit({preventDefault(){}});
+ assert.match(h.nodes['price-label'].textContent,/provisional/);assert.match(h.nodes['chart-note'].textContent,/Current-day bar is provisional.*Quote as of/);assert.match(h.nodes.status.textContent,/indicators are provisional/);
+ const bars=descendants(h.nodes.chart).filter(n=>n.attrs.class==='ohlc-bar');assert.equal(bars.at(-1).attrs['data-observations'],'1');
+});
