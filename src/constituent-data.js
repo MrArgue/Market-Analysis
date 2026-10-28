@@ -46,6 +46,10 @@ export async function handleConstituents(request,env,fetchImpl=fetch,now=Date.no
      for(const q of raw)if(batch.includes(q.symbol)&&validQuote(q,q.symbol,now))quotes[q.symbol]={symbol:q.symbol,price:q.price,previousClose:q.previousClose,marketCap:q.marketCap,timestamp:q.timestamp};
     }catch(error){issues.push({symbols:batch,reason:error.message});}
    }
+   if(!quotes['^GSPC']){
+    const raw=await provider('quote',{symbol:'^GSPC'});const q=raw.find(q=>validQuote(q,'^GSPC',now));
+    if(q)quotes['^GSPC']={symbol:q.symbol,price:q.price,previousClose:q.previousClose,marketCap:q.marketCap,timestamp:q.timestamp};
+   }
    const benchmarkQuote=quotes['^GSPC'];if(!benchmarkQuote)throw new Error('S&P 500 benchmark quote unavailable');
    const asOf=exchangeDate(benchmarkQuote.timestamp*1000);if(Date.parse(today+'T12:00:00Z')-Date.parse(asOf+'T12:00:00Z')>4*86400000)throw new Error('S&P 500 benchmark quote is stale');
    for(const m of members)if(!quotes[m.symbol]||exchangeDate(quotes[m.symbol].timestamp*1000)!==asOf)issues.push({symbol:m.symbol,reason:'Same-session quote unavailable'});
