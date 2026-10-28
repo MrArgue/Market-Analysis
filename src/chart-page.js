@@ -65,7 +65,7 @@ function draw() {
  for (const bar of grouped.bars) {
   const xx = x(bar.index), color = bar.close >= bar.open ? '#24383b' : '#aa5750';
   const path = 'M' + xx + ',' + y(bar.high) + 'V' + y(bar.low) + ' M' + (xx - tickWidth) + ',' + y(bar.open) + 'H' + xx + ' M' + xx + ',' + y(bar.close) + 'H' + (xx + tickWidth);
-  plot.append(node('path', { d: path, stroke: color, fill: 'none', 'stroke-width': bar.provisional ? 1.8 : 1.1, class: 'ohlc-bar', 'data-observations': bar.observations }));
+  plot.append(node('path', { d: path, stroke: color, fill: 'none', 'stroke-width': 1.1, class: 'ohlc-bar', 'data-observations': bar.observations }));
  }
  const lastMarker = { oversold: -99, overbought: -99 };
  view.forEach((r, i) => {
