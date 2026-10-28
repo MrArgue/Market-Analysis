@@ -1,3 +1,4 @@
+import { validateSectorAccess } from './sector-validation.js';
 import { handleDiagnostics } from './diagnostics.js';
 import { chartPage, chartScript } from './chart-page.js';
 import { handleMarket } from './market.js';
@@ -8,6 +9,7 @@ export default {
   fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname;
     if (path === '/diagnostics' || path.startsWith('/diagnostics/')) return handleDiagnostics(request, env, ctx);
+    if (path === '/api/sector-access-check') return validateSectorAccess(request, env);
     if (path === '/api/chart') return handleMarket(request, env, ctx);
     const { pathname } = new URL(request.url);
     if (request.method !== 'GET' && request.method !== 'HEAD') {
