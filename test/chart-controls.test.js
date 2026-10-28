@@ -45,3 +45,19 @@ test('current-day prices and quote time are clearly marked provisional in the cl
  assert.match(h.nodes['price-label'].textContent,/provisional/);assert.match(h.nodes['chart-note'].textContent,/Current-day bar is provisional.*Quote as of/);assert.match(h.nodes.status.textContent,/indicators are provisional/);
  const bars=descendants(h.nodes.chart).filter(n=>n.attrs.class==='ohlc-bar');assert.equal(bars.at(-1).attrs['data-observations'],'1');
 });
+test('one-month current-day bars have uniform strokes and evenly spaced distinct positions',async()=>{
+ const h=harness(),last=h.data.rows.at(-1);last.provisional=true;last.quoteAsOf=last.date+'T18:52:00Z';
+ await h.nodes.query.onsubmit({preventDefault(){}});
+ for(const width of [360,1100,1900]) {
+  h.nodes.plot.clientWidth=width;
+  h.periods.find(b=>b.dataset.period==='1M').onclick();
+  const bars=descendants(h.nodes.chart).filter(n=>n.attrs.class==='ohlc-bar');
+  assert.ok(bars.length>3);
+  assert.ok(bars.every(b=>b.attrs['stroke-width']==='1.1'));
+  const positions=bars.map(b=>Number(/^M([^,]+)/.exec(b.attrs.d)[1]));
+  assert.equal(new Set(positions).size,bars.length);
+  const gap=positions[1]-positions[0];
+  for(let i=1;i<positions.length;i++) assert.ok(Math.abs(positions[i]-positions[i-1]-gap)<1e-8);
+  assert.equal(bars.at(-1).attrs['data-observations'],'1');
+ }
+});
