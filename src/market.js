@@ -1,5 +1,6 @@
 import { calculate, normalize, validDate, methodology } from './technical.js';
 import { sectorAliases, sectorEtfs, resolveSectorEtf } from './sectors.js';
+import { quoteBar } from './current-quote.js';
 
 const symbolPattern = /^[A-Z^][A-Z0-9.^-]{0,19}$/;
 const reply = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -51,6 +52,24 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
     return rows;
   }
   try {
+    // Temporary, bounded entitlement check before building current-day chart behavior.
+    if (p.get('quotePreflight') === '1') {
+      const key = JSON.stringify(['quote-preflight-v1']);
+      const cached = await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();
+      if (cached && now - cached.fetched_at < 60000) return reply(JSON.parse(cached.payload));
+      const checks = [];
+      for (const ticker of ['AAPL','XLK','^GSPC']) {
+        try {
+          const bar = quoteBar(await provider('quote', {symbol:ticker}), ticker, ticker !== '^GSPC');
+          checks.push({symbol:ticker,status:'PASS',httpStatus,date:bar.date,asOf:bar.quoteAsOf,fields:{open:bar.open,high:bar.high,low:bar.low,price:bar.close,volume:bar.volume ?? null}});
+        } catch {
+          checks.push({symbol:ticker,status:'FAIL',httpStatus,reason:httpStatus === null ? 'Network or timeout' : httpStatus >= 300 ? 'Provider access or HTTP failure' : 'Missing or invalid quote fields'});
+        }
+      }
+      const report = {checkedAt:new Date(now).toISOString(),endpoint:'/stable/quote',checks};
+      await writeCache(key,report);
+      return reply(report);
+    }
     const sectorSource = 'Sector ETF proxy';
     if (!sector) {
       const key = JSON.stringify(['fmp-profile-sector-v1', symbol]);
