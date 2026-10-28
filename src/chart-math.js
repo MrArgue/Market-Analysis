@@ -1,3 +1,5 @@
+import { marketSession } from './extended-hours.js';
+export { marketSession };
 export function wholeAxis(low, high, target = 7) {
   const pad = Math.max((high - low) * .06, high * .005, .01);
   const raw = Math.max(1, (high - low + 2 * pad) / Math.max(2, target));
@@ -38,4 +40,4 @@ export function aggregateBars(rows, maxBars) {
   if(current) bars.push({index:rows.length-1,open:current.open,high:current.high,low:current.low,close:current.close,observations:1,provisional:true});
   return { size, bars };
 }
-export const chartMathScript = [wholeAxis, presetStart, dateTicks, aggregateBars].map(fn => fn.toString()).join('\n') + '\nexport { wholeAxis, presetStart, dateTicks, aggregateBars };';
+export const chartMathScript = [wholeAxis, presetStart, dateTicks, aggregateBars, marketSession].map(fn => fn.toString()).join('\n') + '\nexport { wholeAxis, presetStart, dateTicks, aggregateBars, marketSession };';
