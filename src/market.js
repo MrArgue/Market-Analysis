@@ -34,6 +34,12 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch, nowMs =
     try { return await res.json(); }
     catch { failure = 'invalid-json'; throw new Error('response'); }
   }
+  if (p.get('extendedPreflight') === '1' && symbol === 'AAPL') {
+    try {
+      const raw=await provider('aftermarket-trade',{symbol:'AAPL'}),q=Array.isArray(raw)&&raw.length===1?raw[0]:null;
+      return reply({endpoint:'/stable/aftermarket-trade',http:httpStatus,checkedAt:new Date(now).toISOString(),symbol:q?.symbol,price:q?.price,timestamp:q?.timestamp,tradeSize:q?.tradeSize});
+    } catch { return reply({endpoint:'/stable/aftermarket-trade',http:httpStatus,status:'unavailable'}); }
+  }
   async function writeCache(key, payload) {
     stage = 'cache-write';
     await env.DB.prepare('INSERT INTO market_history_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at').bind(key, JSON.stringify(payload), now).run();
