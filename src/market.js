@@ -1,24 +1,24 @@
 import { calculate, normalize, validDate, methodology } from './technical.js';
 import { sectorAliases, sectorEtfs, resolveSectorEtf } from './sectors.js';
-import { quoteBar } from './current-quote.js';
+import { quoteBar, exchangeDate, sessionHasStarted, currentSessionBar, mergeCurrentBar } from './current-quote.js';
 
 const symbolPattern = /^[A-Z^][A-Z0-9.^-]{0,19}$/;
 const reply = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 
-export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
+export async function handleMarket(request, env, ctx, fetchImpl = fetch, nowMs = Date.now()) {
   // Public chart data; operator diagnostics retain their separate Access check.
   if (request.method !== 'GET') return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET' } });
   const p = new URL(request.url).searchParams;
   const symbol = (p.get('symbol') || '').toUpperCase();
   let sector = (p.get('sector') || '').trim();
   const benchmark = (p.get('benchmark') || '^GSPC').toUpperCase();
-  const from = p.get('from') || '2000-01-01', to = p.get('to') || new Date().toISOString().slice(0, 10);
+  const from = p.get('from') || '2000-01-01', to = p.get('to') || exchangeDate(nowMs);
   if ((![symbol, benchmark].every(s => symbolPattern.test(s)) || (sector && !Object.hasOwn(sectorAliases, sector) && !Object.values(sectorEtfs).includes(sector))) || !validDate(from) || !validDate(to) || from > to || Date.parse(to) - Date.parse(from) > 40 * 366 * 86400000) return reply({ error: 'Enter valid symbols and a date range of at most 40 years.' }, 400);
   let options;
   try { options = methodology(Object.fromEntries(['short', 'long', 'lookback', 'sigma', 'sell', 'buy', 'flat'].filter(k => p.has(k)).map(k => [k, k === 'flat' ? p.get(k) : Number(p.get(k))]))); }
   catch { return reply({ error: 'Invalid methodology settings.' }, 400); }
   if (!env.DB?.prepare || !env.FMP_API_KEY?.trim()) return reply({ error: 'Market data requires the existing D1 binding and FMP secret.' }, 503);
-  const now = Date.now(), ttl = 6 * 3600000;
+  const now = nowMs, ttl = 6 * 3600000;
   let cacheHits = 0;
   let stage = 'cache-read', activeSymbol = symbol, httpStatus = null, failure = null;
   async function provider(path, params) {
@@ -51,25 +51,28 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
     await writeCache(key, rows);
     return rows;
   }
-  try {
-    // Temporary, bounded entitlement check before building current-day chart behavior.
-    if (p.get('quotePreflight') === '1') {
-      const key = JSON.stringify(['quote-preflight-v1']);
-      const cached = await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();
-      if (cached && now - cached.fetched_at < 60000) return reply(JSON.parse(cached.payload));
-      const checks = [];
-      for (const ticker of ['AAPL','XLK','^GSPC']) {
+  async function currentQuote(ticker) {
+    const needsVolume=ticker===symbol, key=JSON.stringify(['fmp-current-quote-v1',ticker]);
+    try {
+      stage='cache-read'; httpStatus=null; failure=null;
+      const cached=await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();
+      if(cached && now-cached.fetched_at<60000) {
         try {
-          const bar = quoteBar(await provider('quote', {symbol:ticker}), ticker, ticker !== '^GSPC');
-          checks.push({symbol:ticker,status:'PASS',httpStatus,date:bar.date,asOf:bar.quoteAsOf,fields:{open:bar.open,high:bar.high,low:bar.low,price:bar.close,volume:bar.volume ?? null}});
-        } catch {
-          checks.push({symbol:ticker,status:'FAIL',httpStatus,reason:httpStatus === null ? 'Network or timeout' : httpStatus >= 300 ? 'Provider access or HTTP failure' : 'Missing or invalid quote fields'});
-        }
+          const stored=JSON.parse(cached.payload);
+          const bar=quoteBar([{symbol:ticker,open:stored.open,dayHigh:stored.high,dayLow:stored.low,price:stored.close,volume:stored.volume,timestamp:Date.parse(stored.quoteAsOf)/1000}],ticker,needsVolume);
+          if(currentSessionBar(bar,now)) return {symbol:ticker,status:'available',bar};
+        } catch { /* Refresh malformed or stale-session quotes. */ }
       }
-      const report = {checkedAt:new Date(now).toISOString(),endpoint:'/stable/quote',checks};
-      await writeCache(key,report);
-      return reply(report);
+      const raw=await provider('quote',{symbol:ticker});
+      const bar=quoteBar(raw,ticker,needsVolume);
+      if(!currentSessionBar(bar,now)) return {symbol:ticker,status:'unavailable',reason:'No current regular-session quote'};
+      await writeCache(key,bar);
+      return {symbol:ticker,status:'available',bar};
+    } catch {
+      return {symbol:ticker,status:'unavailable',reason:stage==='cache-read'||stage==='cache-write'?'Quote cache unavailable':httpStatus===null?'Quote network failure':httpStatus>=300?'Quote request returned HTTP '+httpStatus:'Quote fields unavailable'};
     }
+  }
+  try {
     const sectorSource = 'Sector ETF proxy';
     if (!sector) {
       const key = JSON.stringify(['fmp-profile-sector-v1', symbol]);
@@ -92,9 +95,30 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch) {
     // At most one company profile and three distinct histories; no sector-index requests.
     const histories = new Map();
     for (const ticker of new Set([symbol, sector, benchmark])) histories.set(ticker, await history(ticker));
+    const today=exchangeDate(now);
+    let currentDay={state:'not-requested',date:today,quotes:[]};
+    if(from<=today && to>=today && sessionHasStarted(now)) {
+      const quotes=new Map();
+      for(const ticker of histories.keys()) quotes.set(ticker,await currentQuote(ticker));
+      currentDay.quotes=[...quotes.values()].map(q=>({symbol:q.symbol,status:q.status,...(q.bar?{asOf:q.bar.quoteAsOf}:{reason:q.reason})}));
+      const stockQuote=quotes.get(symbol);
+      if(stockQuote?.bar) {
+        for(const ticker of histories.keys()) {
+          const bar=quotes.get(ticker)?.bar;
+          // Never use a prior-day benchmark or an older today's EOD value with a current stock quote.
+          histories.set(ticker,bar?mergeCurrentBar(histories.get(ticker),bar):histories.get(ticker).filter(r=>r.date!==today));
+        }
+        currentDay.state=currentDay.quotes.every(q=>q.status==='available')?'included':'partial';
+        currentDay.asOf=stockQuote.bar.quoteAsOf;
+      } else currentDay.state='unavailable';
+    }
     stage = 'calculation';
     const result = calculate(histories.get(symbol), histories.get(sector), histories.get(benchmark), options);
-    return reply({ symbol, sector, sectorSource, sectorName: sectorBenchmark.name, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
+    if(currentDay.state==='included'||currentDay.state==='partial') {
+      const last=result.rows.find(r=>r.date===today);
+      if(last) {last.provisional=true;last.quoteAsOf=currentDay.asOf;}
+    }
+    return reply({ currentDay, symbol, sector, sectorSource, sectorName: sectorBenchmark.name, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
   } catch (error) {
     // Use only controlled labels/statuses. Never return raw provider bodies, URLs or exceptions.
     let message, code, status = 502;

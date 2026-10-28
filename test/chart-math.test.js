@@ -23,3 +23,9 @@ test('dense OHLC aggregation retains first open, extreme high/low, last close wi
  const before=structuredClone(rows),a=aggregateBars(rows,2);
  assert.equal(a.size,2);assert.equal(a.bars.length,2);assert.deepEqual(a.bars[0],{index:.5,open:10,high:18,low:8,close:16,observations:2});assert.deepEqual(rows,before);
 });
+test('the current provisional session stays a separate final OHLC bar in dense views',()=>{
+ const rows=Array.from({length:20},(_,i)=>({open:100+i,high:103+i,low:98+i,close:101+i}));rows.at(-1).provisional=true;
+ const grouped=aggregateBars(rows,3),last=grouped.bars.at(-1);
+ assert.equal(last.observations,1);assert.equal(last.provisional,true);assert.equal(last.index,19);assert.equal(last.open,119);assert.equal(last.close,120);
+ assert.ok(grouped.bars.slice(0,-1).every(b=>b.index<19));
+});

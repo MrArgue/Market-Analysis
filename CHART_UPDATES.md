@@ -27,3 +27,12 @@ Run `node --test` and `npm run build` (Wrangler dry run). The existing private-w
 ## Public chart access
 
 The page and market-history API now work without login after removal of Worker-wide Access. Diagnostic routes still require a native Access identity and authorized email; unauthenticated diagnostic requests are rejected. Chart API responses contain prices and derived indicators, not the FMP key. Existing input validation, data cache, error redaction and read-only chart methods are retained. API usage by anonymous visitors counts against the configured FMP allowance; this release adds no rate-limit resource or database migration.
+## Current-day bar
+
+After 9:30 a.m. America/New_York on weekdays, history ranges that include the exchange's current date also request current quotes for the stock, sector ETF and market benchmark. The quote's open/dayHigh/dayLow/price map to today's open/high/low/provisional close; cumulative stock volume is used for the current OBV calculation. Date and timestamp checks reject prior-day, premarket and future-dated quotes. Holidays naturally retain historical data if the feed has no matching session quote.
+
+Quotes are cached for 60 seconds separately from the six-hour EOD history. Clicking Load chart refreshes the view subject to that short cache; there is no automatic polling. Today's quote replaces an existing same-date bar or appends one new bar. It never enters the historical cache, and repeated loads cannot add today's volume more than once. The current-day bar remains separate when older display bars are grouped.
+
+Latest price, inspection and the chart footer mark the quote-based bar provisional and display the stock quote time in New York time. During the session, close means latest provided price, not an official closing auction price. Today's technical indicators are provisional too. A missing same-day benchmark leaves today's affected ratios/complete score unavailable; yesterday's benchmark is never carried forward. If the stock quote fails, the historical chart remains usable with an explicit current-quote-unavailable notice. Historical-only ranges, premarket and weekends make no quote calls.
+
+The entitlement and field checks were run before implementation; see DATA_ACCESS.md. A normal uncached current-date load can now make up to seven provider requests (one profile, three histories, three quotes), fewer when symbols coincide or caches are fresh. There are no new bindings, migrations or secrets.
