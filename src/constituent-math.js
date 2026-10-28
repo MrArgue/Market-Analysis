@@ -26,11 +26,32 @@ export function companyWeights(members,quotes){
  }
  return {units,nameFallbacks,companies:companies.size,multiClass:[...companies.values()].filter(g=>g.length>1).map(g=>g.map(m=>m.symbol))};
 }
+// Verified against S&P's HONA inclusion announcement and GICS Industrials definition.
+export function reviewConstituents(members,quotes,maps,dates){
+ const company=m=>String(m.cik||'').replace(/^0+/,'')||m.name.trim().toLowerCase();
+ const failures=new Map(),corrections=[];
+ const reviewed=members.map(m=>{
+  if(m.industry==='Aerospace & Defense'&&m.sector!=='Industrials'){corrections.push({symbol:m.symbol,industry:m.industry,from:m.sector,to:'Industrials'});return {...m,sector:'Industrials'};}
+  return m;
+ });
+ for(const m of reviewed){
+  const missing=Object.entries(dates).filter(([key,date])=>key!=='day'&&date&&!maps[m.symbol]?.has(date)).map(([key])=>key);
+  if(!quotes[m.symbol]||!maps[m.symbol]?.size||missing.length)failures.set(company(m),!quotes[m.symbol]?'Same-session quote unavailable':missing.length?'Incomplete history for '+missing.join(', '):'Daily history unavailable');
+ }
+ const excluded=reviewed.filter(m=>failures.has(company(m))).map(m=>({symbol:m.symbol,name:m.name,reason:failures.get(company(m))}));
+ const eligible=reviewed.filter(m=>!failures.has(company(m)));
+ const industrySectors=new Map();for(const m of eligible){if(!industrySectors.has(m.industry))industrySectors.set(m.industry,new Set());industrySectors.get(m.industry).add(m.sector);}
+ const conflicts=[...industrySectors].filter(([,sectors])=>sectors.size>1).map(([industry,sectors])=>({industry,sectors:[...sectors]}));
+ return {eligible,excluded,corrections,conflicts};
+}
 export function buildConstituentTable({members,quotes,histories,benchmark,benchmarkQuote,now,issues=[]}){
  const asOf=exchangeDate(benchmarkQuote.timestamp*1000),dates=baselineDates(benchmark,asOf);
  const memberSymbols=new Set(members.map(m=>m.symbol));
  const freshQuotes=Object.fromEntries(Object.entries(quotes).filter(([s,q])=>memberSymbols.has(s)&&validQuote(q,s,now)&&exchangeDate(q.timestamp*1000)===asOf));
- const weights=companyWeights(members,freshQuotes),maps=Object.fromEntries(Object.entries(histories).map(([s,rows])=>[s,new Map(rows.map(r=>[r.date,r.close]))]));
+ const universe=members;
+ const maps=Object.fromEntries(Object.entries(histories).map(([s,rows])=>[s,new Map(rows.map(r=>[r.date,r.close]))]));
+ const review=reviewConstituents(members,freshQuotes,maps,dates);members=review.eligible;
+ const weights=companyWeights(members,freshQuotes);
  function aggregate(group){
   const returns={},coverage={};
   const totalCap=group.reduce((n,m)=>n+(weights.units.get(m.symbol)?.cap||0),0);
@@ -57,6 +78,6 @@ export function buildConstituentTable({members,quotes,histories,benchmark,benchm
  const benchmarkPrices=new Map(benchmark.map(r=>[r.date,r.close]));
  const benchmarkReturns=Object.fromEntries(returnColumns.map(key=>{const base=key==='day'?benchmarkQuote.previousClose:benchmarkPrices.get(dates[key]);return[key,base>0?(benchmarkQuote.price/base-1)*100:null];}));
  const timestamps=Object.values(freshQuotes).map(q=>q.timestamp);
- const status=`${members.length} current member securities · ${Object.keys(freshQuotes).length} same-session quotes · ${groups.reduce((n,g)=>n+g.industries.length,0)} sector/industry groups · Prices as of ${asOf}${issues.length?' · '+issues.length+' data issues (see coverage)':''}`;
- return {state:'ready',groups,benchmark:{name:'S&P 500 · official price index',returns:benchmarkReturns},sourceLabel:'Approximate market-cap-weighted baskets · Current S&P 500 members · FMP classifications',status,asOf,baselines:dates,issues,coverage:{members:members.length,quoted:Object.keys(freshQuotes).length,companies:weights.companies,nameFallbacks:weights.nameFallbacks,multiClass:weights.multiClass,oldestQuote:timestamps.length?new Date(Math.min(...timestamps)*1000).toISOString():null,newestQuote:timestamps.length?new Date(Math.max(...timestamps)*1000).toISOString():null},methodology:'Price returns, excluding dividends. Uses today’s S&P membership and FMP sector/industry classifications, not official S&P industry indices. Approximate fixed share units = current allocated company market cap / current price. For each period, return = sum(units × latest price) / sum(units × period-start price) − 1. Period-start prices use common S&P trading dates: 5-Day = five sessions; MTD/YTD = preceding period close; 4-Wk = 28 calendar days; 3M/1-Year = calendar offsets. One-day returns use quote previousClose and regular-session latest price, excluding extended hours. Multiple member share classes share the company cap equally (maximum reported class company cap); this prevents full-cap double counting but is not a float/share-class weight reconstruction. Company CIK identifies issuers, falling back to identical provider company names where CIK is absent. Historical returns use current share estimates and members: survivorship and hindsight bias apply. Missing quotes or period-start prices are excluded only for the affected cells, whose coverage is shown. The S&P 500 benchmark is the actual ^GSPC price series. Top/bottom 20% are ranked per column across industry rows, excluding totals; cutoff ties are included. Refresh is manual, with up to 60-second quote caching. Standard NY session timestamps are shown; provider delays may apply.'};
+ const status=`${members.length} eligible of ${universe.length} current member securities · ${members.filter(m=>freshQuotes[m.symbol]).length} same-session quotes · ${groups.reduce((n,g)=>n+g.industries.length,0)} sector/industry groups · Prices as of ${asOf}${issues.length?' · '+issues.length+' data issues (see coverage)':''}`;
+ return {state:'ready',groups,benchmark:{name:'S&P 500 · official price index',returns:benchmarkReturns},sourceLabel:'Approximate market-cap-weighted baskets · Current S&P 500 members · Reviewed FMP classifications',status,asOf,baselines:dates,issues,review,coverage:{members:members.length,universe:universe.length,excluded:review.excluded.length,quoted:members.filter(m=>freshQuotes[m.symbol]).length,companies:weights.companies,nameFallbacks:weights.nameFallbacks,multiClass:weights.multiClass,oldestQuote:timestamps.length?new Date(Math.min(...timestamps)*1000).toISOString():null,newestQuote:timestamps.length?new Date(Math.max(...timestamps)*1000).toISOString():null},methodology:'Price returns, excluding dividends. Uses today’s S&P membership and FMP sector/industry classifications, not official S&P industry indices. Approximate fixed share units = current allocated company market cap / current price. For each period, return = sum(units × latest price) / sum(units × period-start price) − 1. Period-start prices use common S&P trading dates: 5-Day = five sessions; MTD/YTD = preceding period close; 4-Wk = 28 calendar days; 3M/1-Year = calendar offsets. One-day returns use quote previousClose and regular-session latest price, excluding extended hours. Multiple member share classes share the company cap equally (maximum reported class company cap); this prevents full-cap double counting but is not a float/share-class weight reconstruction. Company CIK identifies issuers, falling back to identical provider company names where CIK is absent. Historical returns use current share estimates and members: survivorship and hindsight bias apply. Companies missing a required period-start price or same-session quote are excluded from all periods, including all member share classes, so the comparison universe is consistent. Aerospace & Defense is assigned to Industrials, correcting the provider mapping. Exclusions and classification corrections are listed below. The S&P 500 benchmark is the actual ^GSPC price series. Top/bottom 20% are ranked per column across industry rows, excluding totals; cutoff ties are included. Refresh is manual, with up to 60-second quote caching. Standard NY session timestamps are shown; provider delays may apply.'};
 }

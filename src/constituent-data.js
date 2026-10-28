@@ -5,7 +5,7 @@ const reply=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Contro
 export async function handleConstituents(request,env,fetchImpl=fetch,now=Date.now()){
  if(!['GET','POST'].includes(request.method))return reply({error:'GET or POST required'},405);
  if(!env.DB?.prepare||!env.FMP_API_KEY)return reply({error:'Existing market data connection required'},503);
- const today=exchangeDate(now),reportKey='constituent-report-v1:'+today;
+ const today=exchangeDate(now),reportKey='constituent-report-v2:'+today;
  async function read(key,ttl){const r=await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();if(!r||now-r.fetched_at>=ttl)return null;try{return JSON.parse(r.payload);}catch{return null;}}
  async function write(key,data){await env.DB.prepare('INSERT INTO market_history_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at').bind(key,JSON.stringify(data),now).run();}
  async function provider(endpoint,params={}){
@@ -20,7 +20,7 @@ export async function handleConstituents(request,env,fetchImpl=fetch,now=Date.no
   if(!rows.length||new Set(rows.map(r=>r.date)).size!==rows.length)throw new Error('No usable daily price history');await write(key,rows);return rows;
  }
  try{
-  const ready=await read(reportKey,60000);if(ready)return reply(ready);
+  const ready=await read(reportKey,request.method==='GET'?6*3600000:60000);if(ready)return reply(request.method==='GET'?{...ready,status:ready.status+' · Saved snapshot; Load returns refreshes prices.'}:ready);
   if(request.method==='GET')return reply({state:'not-loaded'});
   if(!request.headers.get('Content-Type')?.startsWith('application/json'))return reply({error:'JSON request required'},400);
   const origin=request.headers.get('Origin');if(origin&&origin!==new URL(request.url).origin)return reply({error:'Same-origin request required'},403);
@@ -53,7 +53,14 @@ export async function handleConstituents(request,env,fetchImpl=fetch,now=Date.no
    const benchmarkQuote=quotes['^GSPC'];if(!benchmarkQuote)throw new Error('S&P 500 benchmark quote unavailable');
    const asOf=exchangeDate(benchmarkQuote.timestamp*1000);if(Date.parse(today+'T12:00:00Z')-Date.parse(asOf+'T12:00:00Z')>4*86400000)throw new Error('S&P 500 benchmark quote is stale');
    for(const m of members)if(!quotes[m.symbol]||exchangeDate(quotes[m.symbol].timestamp*1000)!==asOf)issues.push({symbol:m.symbol,reason:'Same-session quote unavailable'});
-   job={id:crypto.randomUUID(),members,quotes,issues,benchmark:await history('^GSPC',from),benchmarkQuote,cursor:0,prices:{},day:today,from,createdAt:now};
+   const benchmark=await history('^GSPC',from),signature=JSON.stringify(members.map(m=>[m.symbol,m.sector,m.industry,m.cik]));
+   const prepared=await read('constituent-inputs-v2:'+asOf,6*3600000);
+   const baselines=baselineDates(benchmark,asOf);
+   if(prepared&&prepared.signature===signature&&JSON.stringify(prepared.baselines)===JSON.stringify(baselines)){
+    const result=buildConstituentTable({members,quotes,issues,benchmark,benchmarkQuote,histories:prepared.prices,now});
+    result.refresh={mode:'saved-inputs',preparedAt:prepared.createdAt};await write(reportKey,result);return reply(result);
+   }
+   job={id:crypto.randomUUID(),members,quotes,issues,benchmark,benchmarkQuote,signature,cursor:0,prices:{},day:today,from,createdAt:now};
    await write('constituent-job-v1:'+job.id,job);await write('constituent-active-v1:'+today,{id:job.id});
   }else if(input.action==='step'&&/^[a-f0-9-]{36}$/.test(input.id||'')){
    job=await read('constituent-job-v1:'+input.id,30*60000);if(!job||job.day!==today)throw new Error('Load session expired. Click Load returns to restart.');
@@ -62,6 +69,8 @@ export async function handleConstituents(request,env,fetchImpl=fetch,now=Date.no
    job.cursor+=batch.length;await write('constituent-job-v1:'+job.id,job);
   }else return reply({error:'Invalid load action'},400);
   if(job.cursor<job.members.length)return reply({state:'loading',id:job.id,loaded:job.cursor,total:job.members.length});
-  const result=buildConstituentTable({...job,histories:job.prices,now});await write(reportKey,result);return reply(result);
+  const asOf=exchangeDate(job.benchmarkQuote.timestamp*1000);
+  await write('constituent-inputs-v2:'+asOf,{signature:job.signature,baselines:baselineDates(job.benchmark,asOf),prices:job.prices,createdAt:now});
+  const result=buildConstituentTable({...job,histories:job.prices,now});result.refresh={mode:'rebuilt-inputs',preparedAt:now};await write(reportKey,result);return reply(result);
  }catch(error){const safe=/^(FMP |No usable |Membership|S&P 500 |Load session)/.test(error.message||'')?error.message:'Sector data could not be loaded. Check the existing data connection.';return reply({error:safe},502);}
 }
