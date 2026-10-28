@@ -1,0 +1,4 @@
+export const navigationStyle = `.app-tabs{display:flex;gap:6px;padding:10px 28px 0;background:#1f2b2f;border-bottom:1px solid #ded2ab}.app-tabs a{padding:10px 18px;color:#ded2ab;text-decoration:none;font-size:13px;border:1px solid transparent;border-radius:4px 4px 0 0}.app-tabs a[aria-current=page]{background:#f6f5ef;color:#1f2b2f;border-color:#ded2ab;border-bottom-color:#f6f5ef}.app-tabs a:hover{color:#fff}.app-tabs a[aria-current=page]:hover{color:#1f2b2f}@media(max-width:650px){.app-tabs{padding:7px 10px 0}.app-tabs a{padding:9px 12px;font-size:12px}}`;
+export function appNavigation(active) {
+ return `<nav class="app-tabs" aria-label="Research tools"><a href="/"${active==='chart'?' aria-current="page"':''}>Tech Chart</a><a href="/sectors"${active==='sectors'?' aria-current="page"':''}>US Sectors/Industries</a></nav>`;
+}
