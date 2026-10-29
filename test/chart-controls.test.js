@@ -96,3 +96,11 @@ test('ratio checkbox draws a fractional left axis without changing price scale, 
 test('score backgrounds increase opacity by thirty percent, from .10 to .13',async()=>{
  const h=harness();await h.nodes.query.onsubmit({preventDefault(){}});const bands=descendants(h.nodes.chart).filter(n=>n.attrs['data-regime']);assert.ok(bands.length>0);assert.ok(bands.every(n=>n.attrs.opacity==='.13'));
 });
+test('chart displays percentiles and configured threshold legends instead of z-score controls',async()=>{
+ const h=harness();h.data.rows.at(-1).percentile=97.25;h.data.options.lowerPercentile=10;h.data.options.upperPercentile=90;
+ await h.nodes.query.onsubmit({preventDefault(){}});assert.equal(h.nodes.percentile.textContent,'97.25%');assert.match(h.nodes['oversold-legend'].textContent,/10th percentile/);assert.match(h.nodes['overbought-legend'].textContent,/90th percentile/);assert.ok(!chartPage.includes('name="sigma"'));assert.ok(chartPage.includes('name="minHistory"'));
+ h.nodes.chart.onpointermove({clientX:1000});assert.match(h.nodes.detail.textContent,/Percentile/);assert.ok(!h.nodes.detail.textContent.includes(' · Z '));
+});
+test('insufficient percentile history is clearly unavailable rather than shown as zero',async()=>{
+ const h=harness();h.data.rows.at(-1).percentile=null;h.data.rows.at(-1).percentileSample=37;await h.nodes.query.onsubmit({preventDefault(){}});assert.equal(h.nodes.percentile.textContent,'—');assert.match(h.nodes.percentile.attrs.title,/252.*37/);
+});

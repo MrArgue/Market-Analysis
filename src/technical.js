@@ -1,9 +1,11 @@
-export const defaults = Object.freeze({ short: 50, long: 200, lookback: 2511, sigma: 2, sell: 1, buy: 5, flat: 'subtract' });
+export const defaults = Object.freeze({ short: 50, long: 200, lookback: 2511, sigma: 2, lowerPercentile: 5, upperPercentile: 95, minHistory: 252, sell: 1, buy: 5, flat: 'subtract' });
 
 export function methodology(input = {}) {
   const o = { ...defaults, ...input };
+  if(input.minHistory===undefined)o.minHistory=Math.min(defaults.minHistory,o.lookback);
   for (const k of ['short', 'long', 'lookback']) if (!Number.isInteger(o[k]) || o[k] < 2 || o[k] > 5000) throw new Error('Invalid methodology window.');
   if (o.short > o.long || !Number.isFinite(o.sigma) || o.sigma <= 0 || o.sigma > 10 || !Number.isInteger(o.sell) || !Number.isInteger(o.buy) || o.sell < 0 || o.buy > 6 || o.sell >= o.buy || !['subtract', 'unchanged'].includes(o.flat)) throw new Error('Invalid methodology settings.');
+  if(!Number.isInteger(o.minHistory)||o.minHistory<2||o.minHistory>o.lookback||!Number.isFinite(o.lowerPercentile)||o.lowerPercentile<0||o.lowerPercentile>=50||!Number.isFinite(o.upperPercentile)||o.upperPercentile<=50||o.upperPercentile>100)throw new Error('Invalid percentile settings.');
   return o;
 }
 
@@ -22,6 +24,20 @@ export function normalize(rows, volume = false, requireOhlc = false) {
   }).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// Empirical midrank against prior valid observations only; ties are neutral in flat series.
+export function percentileRanks(values,lookback,minimum){
+ if(!Number.isInteger(lookback)||lookback<2||!Number.isInteger(minimum)||minimum<2||minimum>lookback)throw new Error('Invalid percentile window.');
+ const sorted=[],history=[],result=[];
+ function lower(value){let lo=0,hi=sorted.length;while(lo<hi){const mid=(lo+hi)>>>1;if(sorted[mid]<value)lo=mid+1;else hi=mid;}return lo;}
+ function upper(value){let lo=0,hi=sorted.length;while(lo<hi){const mid=(lo+hi)>>>1;if(sorted[mid]<=value)lo=mid+1;else hi=mid;}return lo;}
+ for(const value of values){
+  let percentile=null;
+  if(Number.isFinite(value)&&history.length>=minimum){const tolerance=1e-12*Math.max(1,Math.abs(value)),below=lower(value-tolerance),atOrBelow=upper(value+tolerance);percentile=100*(below+(atOrBelow-below)/2)/history.length;}
+  result.push({percentile,sample:history.length});
+  if(Number.isFinite(value)){sorted.splice(lower(value),0,value);history.push(value);if(history.length>lookback){const old=history.shift();sorted.splice(lower(old),1);}}
+ }
+ return result;
+}
 export function calculate(stockRows, sectorRows, marketRows, input = {}) {
   const options = methodology(input), stock = normalize(stockRows, true);
   const sector = new Map(normalize(sectorRows).map(r => [r.date, r.close]));
@@ -50,6 +66,8 @@ export function calculate(stockRows, sectorRows, marketRows, input = {}) {
     r.score = r.components.includes(null) ? null : r.components.reduce((a, b) => a + b, 0);
     r.distance = r.sectorRatio === null || r.averages[0][1] === null ? null : r.sectorRatio / r.averages[0][1] - 1;
   }
+  const ranks=percentileRanks(rows.map(r=>r.distance),options.lookback,options.minHistory);
+  // Legacy z-score remains diagnostic for workbook parity; markers use empirical percentiles.
   // Sliding Welford variance: O(n), including today, without cancellation from squared sums.
   let n = 0, mean = 0, m2 = 0;
   for (let i = 0; i < rows.length; i++) {
@@ -67,7 +85,8 @@ export function calculate(stockRows, sectorRows, marketRows, input = {}) {
       if (n >= 2 && sd > 1e-12) r.z = (r.distance - mean) / sd;
     }
     r.regime = r.score === null ? 'unavailable' : r.score <= options.sell ? 'weak' : r.score >= options.buy ? 'strong' : 'neutral';
-    r.signal = r.z === null ? null : r.z >= options.sigma ? 'overbought' : r.z <= -options.sigma ? 'oversold' : null;
+    r.percentile=ranks[i].percentile;r.percentileSample=ranks[i].sample;
+    r.signal = r.percentile === null ? null : r.percentile >= options.upperPercentile ? 'overbought' : r.percentile <= options.lowerPercentile ? 'oversold' : null;
   }
   return { options, rows, missingBenchmarkDates: rows.filter(r => r.sectorRatio === null || r.marketRatio === null).length };
 }

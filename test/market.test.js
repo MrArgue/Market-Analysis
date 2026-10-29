@@ -130,3 +130,8 @@ test('VRT uses XLI and never requests the unavailable sector index, even when an
  assert.equal(data.rows.at(-1).sectorRatio,1);assert.equal(data.rows.at(-1).distance,0);
  assert.ok(s.calls.every(c=>!c.url.pathname.endsWith('/index-list') && !c.url.searchParams.get('symbol')?.startsWith('^SP500-')));
 });
+test('percentile controls validate before data calls and reuse existing history caches',async()=>{
+ for(const params of ['lowerPercentile=50','upperPercentile=101','minHistory=3000']){const s=setup(),r=await handleMarket(request(query+'&'+params),s.env,authorized,s.fetcher);assert.equal(r.status,400);assert.equal(s.calls.length,0);}
+ const s=setup(),base=query+'&short=2&long=3&lookback=4&minHistory=2';const first=await(await handleMarket(request(base),s.env,authorized,s.fetcher)).json(),count=s.calls.length;
+ const second=await(await handleMarket(request(base+'&lowerPercentile=10&upperPercentile=90'),s.env,authorized,s.fetcher)).json();assert.equal(second.options.lowerPercentile,10);assert.equal(second.options.upperPercentile,90);assert.equal(s.calls.length,count);assert.deepEqual(first.rows.map(r=>[r.score,r.distance]),second.rows.map(r=>[r.score,r.distance]));
+});
