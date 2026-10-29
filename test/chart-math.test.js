@@ -29,3 +29,15 @@ test('the current provisional session stays a separate final OHLC bar in dense v
  assert.equal(last.observations,1);assert.equal(last.provisional,true);assert.equal(last.index,19);assert.equal(last.open,119);assert.equal(last.close,120);
  assert.ok(grouped.bars.slice(0,-1).every(b=>b.index<19));
 });
+test('ratio axis supports fractional and constant ratios independently of whole-number price axes',async()=>{
+ const {ratioAxis}=await import('../src/chart-math.js');
+ for(const values of [[.32,.37],[.000021,.000026],[1.8,1.8],[80,105]]){const a=ratioAxis(values);assert.ok(a.min<=Math.min(...values));assert.ok(a.max>=Math.max(...values));assert.ok(a.max>a.min);assert.ok(a.ticks.length>=2&&a.ticks.length<=12);}
+ assert.equal(ratioAxis([null,undefined,NaN,0,-1]),null);
+});
+test('smoothed line passes observations, breaks at missing values and keeps controls within each segment range',async()=>{
+ const {smoothLine}=await import('../src/chart-math.js');
+ const points=[{x:0,y:10},{x:1,y:11},{x:2,y:30},{x:3,y:9}],path=smoothLine(points);assert.ok(path.startsWith('M0.000,10.000'));assert.equal((path.match(/C/g)||[]).length,3);
+ const curves=[...path.matchAll(/C([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)/g)];
+ curves.forEach((c,i)=>{const low=Math.min(points[i].y,points[i+1].y)-.001,high=Math.max(points[i].y,points[i+1].y)+.001;assert.ok(Number(c[2])>=low&&Number(c[2])<=high);assert.ok(Number(c[4])>=low&&Number(c[4])<=high);assert.equal(Number(c[5]),points[i+1].x);assert.equal(Number(c[6]),points[i+1].y);});
+ const gap=smoothLine([points[0],points[1],null,points[2],points[3]]);assert.equal((gap.match(/M/g)||[]).length,2);assert.equal((gap.match(/C/g)||[]).length,2);assert.ok(!gap.includes('NaN'));assert.equal(smoothLine([]),'');
+});
