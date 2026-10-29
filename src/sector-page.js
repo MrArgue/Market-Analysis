@@ -6,6 +6,7 @@ export const sectorPage=head+`<style>
 </style></head><body><header class="topbar"><div class="brand">Market Analysis <small>TECHNICAL RESEARCH</small></div><a href="/diagnostics">Connection diagnostics ↗</a></header>`+appNavigation('sectors')+`<main class="sector-main"><div class="sector-heading"><div><p class="eyebrow">US equity performance</p><h1>US Sectors/Industries</h1><p id="source-label">Sector and industry returns</p></div><div class="sector-actions"><button id="load-sectors" type="button">Load returns</button></div></div><p class="sector-status" id="sector-status" role="status" aria-live="polite">Load returns to view the sector and industry table.</p><div class="return-legend"><span class="return-best">Top 20% of industries</span><span class="return-worst">Bottom 20% of industries</span><span>Ranked separately within each return column</span></div><div id="sector-results" class="sector-grid"><div class="return-card empty-table">Returns will appear here after loading.</div></div><details class="sector-method"><summary>Return methodology and data coverage</summary><div id="sector-method"></div></details></main><script type="module" src="/sectors.js"></script></body></html>`;
 export const sectorScript=String.raw`
 const $=id=>document.getElementById(id);
+let manualRefresh=false;
 const columns=[['day','1-Day'],['five','5-Day'],['mtd','MTD'],['fourWeeks','4-Wk'],['threeMonths','3M'],['ytd','YTD'],['year','1-Year']];
 function element(tag,text,className){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(className)n.className=className;return n;}
 function format(value){return Number.isFinite(value)?(value>0?'+':'')+value.toFixed(1)+'%':'—';}
@@ -30,14 +31,18 @@ function render(data){
   if(values.length>=5){const count=Math.max(1,Math.floor(values.length*.2));thresholds[key]={low:values[count-1],high:values[values.length-count]};}
  }
  const results=$('sector-results');results.replaceChildren();
- const midpoint=Math.ceil(data.groups.length/2);
+ let midpoint=data.groups.length;
+ if(data.groups.length>1){
+  const total=data.groups.reduce((n,g)=>n+1+g.industries.length,0);let left=data.benchmark?1:0,best=Infinity;
+  for(let i=1;i<data.groups.length;i++){left+=1+data.groups[i-1].industries.length;const difference=Math.abs(left-(total-left+(data.benchmark?1:0)));if(difference<best){best=difference;midpoint=i;}}
+ }
  for(const [partIndex,groups]of [data.groups.slice(0,midpoint),data.groups.slice(midpoint)].entries()){
   if(!groups.length)continue;
   const card=element('div',undefined,'return-card'),scroll=element('div',undefined,'return-scroll'),table=element('table',undefined,'return-table'),head=element('thead'),hr=element('tr');
   for(const label of ['Sector / Industry',...columns.map(c=>c[1])]){const th=element('th',label);th.scope='col';hr.append(th);}head.append(hr);table.append(head);
-  const body=element('tbody');
+  const body=element('tbody');if(partIndex===0&&data.benchmark)body.append(row(data.benchmark,'market-total',thresholds));
   for(const group of groups){body.append(row(group,'sector-total',thresholds));for(const industry of group.industries)body.append(row(industry,'industry',thresholds));}
-  if(partIndex===(data.groups.length>midpoint?1:0)&&data.benchmark)body.append(row(data.benchmark,'market-total',thresholds));
+
   table.append(body);scroll.append(table);card.append(scroll);results.append(card);
  }
  $('source-label').textContent=data.sourceLabel;
@@ -45,13 +50,14 @@ function render(data){
  $('sector-status').textContent=data.status;
 }
 $('load-sectors').onclick=async()=>{
+ manualRefresh=true;
  const button=$('load-sectors');button.disabled=true;$('sector-status').textContent='Loading sector and industry returns…';
  try{
   let response=await fetch('/api/sectors',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'start'})});
   let data=await response.json();
   if(!response.ok)throw new Error(data.error||'Returns are unavailable.');
   while(data.state==='loading'){
-   $('sector-status').textContent='Loading histories: '+data.loaded+' / '+data.total+' securities. First load is cached for later visits.';
+   $('sector-status').textContent='Loading histories: '+data.loaded+' / '+data.total+' securities. Preparing saved inputs for later refreshes.';
    response=await fetch('/api/sectors',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'step',id:data.id})});
    data=await response.json();if(!response.ok)throw new Error(data.error||'Returns are unavailable.');
   }
@@ -59,4 +65,8 @@ $('load-sectors').onclick=async()=>{
  }catch(error){$('sector-status').textContent=error.message+' Any previously loaded returns remain visible.';}
  finally{button.disabled=false;}
 };
+if(typeof window!=='undefined'){
+ fetch('/api/sectors').then(r=>r.ok?r.json():null).then(data=>{if(data?.state==='ready'&&!manualRefresh&&!$('load-sectors').disabled)render(data);}).catch(()=>{});
+}
 `;
+// Opening the tab reads a stored snapshot only; it does not fetch FMP data.

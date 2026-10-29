@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {companyWeights,buildConstituentTable,baselineDates,validQuote} from '../src/constituent-math.js';
+import {companyWeights,buildConstituentTable,baselineDates,validQuote,reviewConstituents} from '../src/constituent-math.js';
 import {handleConstituents} from '../src/constituent-data.js';
 const now=Date.parse('2026-10-28T18:00:00Z');
 const members=[{symbol:'AAA',name:'Same Co',cik:'001',sector:'Technology',industry:'Software'},{symbol:'BBB',name:'Same Co',cik:'1',sector:'Technology',industry:'Software'},{symbol:'CCC',name:'Other',cik:'2',sector:'Technology',industry:'Software'}];
@@ -12,9 +12,9 @@ test('company cap is divided between member share classes without double countin
  const w=companyWeights(members,quotes);assert.equal(w.companies,2);assert.equal(w.units.get('AAA').cap,100);assert.equal(w.units.get('BBB').cap,100);assert.equal(w.units.get('CCC').cap,100);assert.deepEqual(w.multiClass,[['AAA','BBB']]);
  const r=buildConstituentTable(input);assert.ok(Math.abs(r.groups[0].returns.day-50)<1e-9);assert.ok(Math.abs(r.benchmark.returns.day-10)<1e-9);assert.equal(r.groups[0].coverage.day.included,3);
 });
-test('missing classes are disclosed and their cap is not reassigned to remaining classes',()=>{
+test('an incomplete listed class excludes the whole company consistently',()=>{
  const copy={...quotes};delete copy.BBB;
- const r=buildConstituentTable({...input,quotes:copy});assert.ok(Math.abs(r.groups[0].returns.day-100/3)<1e-9);assert.equal(r.groups[0].coverage.day.included,2);assert.equal(r.groups[0].coverage.day.total,3);assert.equal(r.coverage.quoted,2);
+ const r=buildConstituentTable({...input,quotes:copy});assert.equal(r.groups[0].returns.day,0);assert.equal(r.groups[0].coverage.day.included,1);assert.equal(r.groups[0].coverage.day.total,1);assert.equal(r.coverage.quoted,1);assert.equal(r.review.excluded.length,2);
 });
 test('missing baselines produce unavailable cells; stale quotes are excluded and index market cap may be zero',()=>{
  assert.equal(validQuote(input.benchmarkQuote,'^GSPC',now),true);assert.equal(validQuote({...quotes.AAA,marketCap:0},'AAA',now),false);
@@ -45,10 +45,28 @@ test('full 503-security load is bounded per request, resumes in steps and reuses
  assert.equal(data.state,'ready');assert.equal(data.coverage.quoted,503);assert.equal(data.groups[0].coverage.year.included,503);assert.equal(s.calls.filter(p=>p.endsWith('/historical-price-eod/full')).length,504);
  const count=s.calls.length;const again=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now)).json();assert.equal(again.state,'ready');assert.equal(s.calls.length,count);assert.ok(!JSON.stringify(data).includes('private-secret'));
 });
-test('missing stock history yields partial coverage and a controlled issue; denied benchmark stops safely',async()=>{
- const s=setup(3,{denyHistory:'T1'});let data=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now)).json();data=await(await handleConstituents(s.request({action:'step',id:data.id}),s.env,s.fetcher,now)).json();assert.equal(data.state,'ready');assert.equal(data.groups[0].coverage.year.included,2);assert.equal(data.groups[0].coverage.day.included,3);assert.ok(data.issues.some(i=>i.symbol==='T1'));assert.ok(!JSON.stringify(data).includes('private-secret'));
+test('missing stock history excludes that company in every period; denied benchmark stops safely',async()=>{
+ const s=setup(3,{denyHistory:'T1'});let data=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now)).json();data=await(await handleConstituents(s.request({action:'step',id:data.id}),s.env,s.fetcher,now)).json();assert.equal(data.state,'ready');assert.equal(data.groups[0].coverage.year.included,2);assert.equal(data.groups[0].coverage.day.included,2);assert.equal(data.review.excluded.length,1);assert.ok(data.issues.some(i=>i.symbol==='T1'));assert.ok(!JSON.stringify(data).includes('private-secret'));
  const denied=setup(3,{denyQuotes:true});const r=await handleConstituents(denied.request({action:'start'}),denied.env,denied.fetcher,now);assert.equal(r.status,502);assert.ok(!(await r.text()).includes('private-secret'));
 });
 test('invalid actions, cross-origin writes and expired jobs never fetch provider data',async()=>{
  const s=setup(3);for(const request of [s.request({action:'oops'}),s.request({action:'step',id:'00000000-0000-0000-0000-000000000000'}),new Request('https://example.com/api/sectors',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://other.example'},body:'{"action":"start"}'})]){const r=await handleConstituents(request,s.env,s.fetcher,now);assert.ok(r.status>=400);}assert.equal(s.calls.length,0);
+});
+test('Aerospace & Defense is Industrials; short-history companies are excluded rather than left in a conflicting sector',()=>{
+ const list=[{symbol:'HONA',name:'Honeywell Aerospace',cik:'3',sector:'Technology',industry:'Aerospace & Defense'},{symbol:'RTX',name:'RTX',cik:'4',sector:'Industrials',industry:'Aerospace & Defense'}];
+ const quotes={HONA:{},RTX:{}},dates={day:'2026-10-27',year:'2025-10-28'};
+ const maps={HONA:new Map([['2026-10-27',100]]),RTX:new Map([['2025-10-28',100]])};
+ const review=reviewConstituents(list,quotes,maps,dates);assert.equal(review.eligible.length,1);assert.equal(review.eligible[0].symbol,'RTX');assert.equal(review.excluded[0].symbol,'HONA');assert.equal(review.corrections[0].to,'Industrials');assert.equal(review.conflicts.length,0);
+ maps.HONA.set('2025-10-28',100);const complete=reviewConstituents(list,quotes,maps,dates);assert.ok(complete.eligible.every(m=>m.sector==='Industrials'));
+});
+test('saved inputs refresh expired report with fresh quotes in one request and zero history-provider calls',async()=>{
+ const s=setup(3);let data=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now)).json();data=await(await handleConstituents(s.request({action:'step',id:data.id}),s.env,s.fetcher,now)).json();assert.equal(data.refresh.mode,'rebuilt-inputs');
+ const historyCalls=s.calls.filter(p=>p.endsWith('/historical-price-eod/full')).length;
+ s.reset();const refreshed=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now+61000)).json();assert.equal(refreshed.state,'ready');assert.equal(refreshed.refresh.mode,'saved-inputs');assert.equal(s.calls.filter(p=>p.endsWith('/historical-price-eod/full')).length,historyCalls);assert.ok(s.queries<50);
+ const calls=s.calls.length;const saved=await(await handleConstituents(new Request('https://example.com/api/sectors'),s.env,s.fetcher,now+180000)).json();assert.equal(saved.state,'ready');assert.match(saved.status,/Saved snapshot/);assert.equal(s.calls.length,calls);
+});
+test('a changed baseline invalidates the prepared input pack',async()=>{
+ const s=setup(3);let data=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now)).json();await handleConstituents(s.request({action:'step',id:data.id}),s.env,s.fetcher,now);
+ const key='constituent-inputs-v2:2026-10-28',stored=await s.env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();const pack=JSON.parse(stored.payload);pack.baselines.year='2025-10-27';await s.env.DB.prepare('INSERT INTO market_history_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)').bind(key,JSON.stringify(pack),now).run();
+ data=await(await handleConstituents(s.request({action:'start'}),s.env,s.fetcher,now+61000)).json();assert.equal(data.state,'loading');assert.equal(data.loaded,0);
 });

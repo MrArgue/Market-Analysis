@@ -32,3 +32,22 @@ test('client advances bounded load steps and shows progress before rendering',as
  vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{assert.equal(url,'/api/sectors');assert.equal(options.method,'POST');const body=JSON.parse(options.body);assert.equal(body.action,calls?'step':'start');calls++;return{ok:true,json:async()=>calls<3?{state:'loading',id:'job',loaded:(calls-1)*12,total:24}:ready};}});
  await nodes['load-sectors'].onclick();assert.equal(calls,3);assert.equal(nodes['sector-status'].textContent,'Loaded');assert.equal(nodes['load-sectors'].disabled,false);assert.equal(nodes['sector-results'].children.length,1);
 });
+test('S&P 500 is first in the left table and column split minimizes row imbalance without splitting sectors',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()]));
+ const groups=[20,18,14,4,8,4,5,3,12,4,5].map((n,i)=>({name:'Sector '+i,industries:Array.from({length:n},(_,j)=>({name:'Industry '+i+' '+j,returns:{day:j}}))}));
+ const data={state:'ready',groups,benchmark:{name:'S&P 500',returns:{day:1}},sourceLabel:'TEST',methodology:'TEST',status:'TEST'};
+ vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>({ok:true,json:async()=>data})});await nodes['load-sectors'].onclick();
+ const all=n=>n.children.flatMap(c=>[c,...all(c)]),cards=nodes['sector-results'].children;
+ const rows=cards.map(c=>all(c).filter(n=>['sector-total','market-total','industry'].includes(n.className)));
+ assert.equal(rows[0][0].className,'market-total');assert.equal(rows[0][0].children[0].textContent,'S&P 500');assert.equal(rows[1].filter(n=>n.className==='market-total').length,0);
+ const difference=Math.abs(rows[0].length-rows[1].length),total=groups.reduce((n,g)=>n+1+g.industries.length,0);let left=1;
+ for(let i=1;i<groups.length;i++){left+=1+groups[i-1].industries.length;assert.ok(difference<=Math.abs(left-(total-left+1)));}
+});
+test('a slow saved snapshot cannot replace a newer manual refresh',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()]));let resolveSaved;
+ const report=status=>({state:'ready',groups:[{name:'Sector',industries:[]}],sourceLabel:'TEST',methodology:'TEST',status});
+ vm.runInNewContext(sectorScript,{window:{},document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>options?{ok:true,json:async()=>report('Fresh prices')}:new Promise(resolve=>{resolveSaved=resolve;})});
+ await nodes['load-sectors'].onclick();resolveSaved({ok:true,json:async()=>report('Older saved prices')});await new Promise(resolve=>setImmediate(resolve));assert.equal(nodes['sector-status'].textContent,'Fresh prices');
+});
