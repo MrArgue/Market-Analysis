@@ -40,4 +40,37 @@ export function aggregateBars(rows, maxBars) {
   if(current) bars.push({index:rows.length-1,open:current.open,high:current.high,low:current.low,close:current.close,observations:1,provisional:true});
   return { size, bars };
 }
-export const chartMathScript = [wholeAxis, presetStart, dateTicks, aggregateBars, marketSession].map(fn => fn.toString()).join('\n') + '\nexport { wholeAxis, presetStart, dateTicks, aggregateBars, marketSession };';
+export function ratioAxis(values,target=6){
+ const valid=values.filter(v=>Number.isFinite(v)&&v>0);if(!valid.length)return null;
+ const low=Math.min(...valid),high=Math.max(...valid),pad=Math.max((high-low)*.06,high*.005,Number.EPSILON);
+ const raw=(high-low+2*pad)/Math.max(2,target),power=10**Math.floor(Math.log10(raw));
+ const step=[1,2,2.5,5,10].map(n=>n*power).find(n=>n>=raw);
+ const min=Math.max(0,Math.floor((low-pad)/step)*step),max=Math.max(min+step,Math.ceil((high+pad)/step)*step),ticks=[];
+ for(let n=0;n<=Math.round((max-min)/step);n++)ticks.push(min+n*step);
+ return {min,max,step,ticks};
+}
+// Monotone cubic interpolation rounds corners without changing observations or overshooting them.
+export function smoothLine(points){
+ let path='',run=[];
+ for(let i=0;i<=points.length;i++){
+  const point=points[i],valid=point&&Number.isFinite(point.x)&&Number.isFinite(point.y);
+  if(valid&&(!run.length||point.x>run.at(-1).x)){run.push(point);continue;}
+  if(run.length){
+   path+='M'+run[0].x.toFixed(3)+','+run[0].y.toFixed(3);
+   const delta=[],slopes=[];
+   for(let j=0;j<run.length-1;j++)delta.push((run[j+1].y-run[j].y)/(run[j+1].x-run[j].x));
+   for(let j=0;j<run.length;j++){
+    if(j===0)slopes.push(delta[0]||0);
+    else if(j===run.length-1)slopes.push(delta.at(-1)||0);
+    else{const a=delta[j-1],b=delta[j],h0=run[j].x-run[j-1].x,h1=run[j+1].x-run[j].x,p=(a*h1+b*h0)/(h0+h1);slopes.push((Math.sign(a)+Math.sign(b))*Math.min(Math.abs(a),Math.abs(b),Math.abs(p)/2));}
+   }
+   for(let j=1;j<run.length;j++){
+    const a=run[j-1],b=run[j],h=(b.x-a.x)/3;
+    path+='C'+(a.x+h).toFixed(3)+','+(a.y+slopes[j-1]*h).toFixed(3)+' '+(b.x-h).toFixed(3)+','+(b.y-slopes[j]*h).toFixed(3)+' '+b.x.toFixed(3)+','+b.y.toFixed(3);
+   }
+  }
+  run=valid?[point]:[];
+ }
+ return path;
+}
+export const chartMathScript = [wholeAxis, presetStart, dateTicks, aggregateBars, marketSession, ratioAxis, smoothLine].map(fn => fn.toString()).join('\n') + '\nexport { wholeAxis, presetStart, dateTicks, aggregateBars, marketSession, ratioAxis, smoothLine };';

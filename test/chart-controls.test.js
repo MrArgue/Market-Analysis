@@ -83,3 +83,16 @@ test('regular hours never show extended price even if response contains one; una
  await h.nodes.query.onsubmit({preventDefault(){}});assert.equal(h.nodes['extended-quote'].hidden,true);
  h.data.extendedHours={state:'unavailable'};h.advance(Date.parse('2026-10-28T21:43:00Z'));assert.equal(h.nodes['extended-quote'].hidden,true);
 });
+test('ratio checkbox draws a fractional left axis without changing price scale, indicators or requesting data',async()=>{
+ const h=harness();h.data.rows.forEach(r=>r.sectorRatio=.01+r.close/1000);const original=structuredClone(h.data.rows.at(-1));
+ await h.nodes.query.onsubmit({preventDefault(){}});
+ const ticks=()=>descendants(h.nodes.chart).filter(n=>n.attrs.class==='y-tick').map(n=>n.textContent);
+ const priceTicks=ticks();assert.ok(!descendants(h.nodes.chart).some(n=>n.attrs.class==='ratio-line'));
+ h.nodes['show-ratio'].checked=true;h.nodes['show-ratio'].onchange();
+ const lines=descendants(h.nodes.chart).filter(n=>n.attrs.class==='ratio-line'),ratioTicks=descendants(h.nodes.chart).filter(n=>n.attrs.class==='ratio-tick');assert.equal(lines.length,1);assert.match(lines[0].attrs.d,/C/);assert.ok(ratioTicks.length>2);assert.ok(ratioTicks.some(n=>n.textContent.includes('.')));assert.deepEqual(ticks(),priceTicks);assert.equal(h.calls,1);assert.deepEqual(h.data.rows.at(-1),original);
+ h.periods.find(p=>p.dataset.period==='1M').onclick();assert.ok(descendants(h.nodes.chart).some(n=>n.attrs.class==='ratio-line'));
+ h.nodes['show-ratio'].checked=false;h.nodes['show-ratio'].onchange();assert.ok(!descendants(h.nodes.chart).some(n=>n.attrs.class==='ratio-line'));assert.equal(h.calls,1);
+});
+test('score backgrounds increase opacity by thirty percent, from .10 to .13',async()=>{
+ const h=harness();await h.nodes.query.onsubmit({preventDefault(){}});const bands=descendants(h.nodes.chart).filter(n=>n.attrs['data-regime']);assert.ok(bands.length>0);assert.ok(bands.every(n=>n.attrs.opacity==='.13'));
+});

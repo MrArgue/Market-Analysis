@@ -17,5 +17,7 @@ test('bundled Worker serves self-contained browser helper functions',async()=>{
  assert.equal(math.marketSession(Date.parse('2026-10-28T21:42:57Z')),'after-hours');
  assert.equal(math.marketSession(Date.parse('2026-10-28T18:00:00Z')),'regular');
  assert.ok(math.wholeAxis(100,120).ticks.length>0);
+ assert.ok(math.ratioAxis([.1,.2]).ticks.length>0);
+ assert.match(math.smoothLine([{x:0,y:1},{x:1,y:2},{x:2,y:1}]),/C/);
  assert.equal(math.aggregateBars([{open:100,high:110,low:90,close:105}],10).bars.length,1);
 });
