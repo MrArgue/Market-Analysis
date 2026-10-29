@@ -66,7 +66,7 @@ export async function handleConstituents(request,env,fetchImpl=fetch,now=Date.no
    job={id:crypto.randomUUID(),members,quotes,issues,benchmark,benchmarkQuote,signature,cursor:0,day:today,month,from,recent,references,createdAt:now,buffer:{},prices:{},chunks:[],mode:'monthly-rebuild'};
    if(monthly){
     const series=await loadChunks(monthly),selected=selectPrices(series,recent,dates),work=[];
-    for(const m of members){const available=new Set((selected[m.symbol]||[]).map(r=>r.date));const missing=Object.values(dates).filter(date=>date&&date>monthly.through&&!available.has(date));if(missing.length)work.push({...m,patchFrom:missing.sort()[0]});}
+    for(const m of members){const available=new Set((selected[m.symbol]||[]).map(r=>r.date));const missing=Object.values(dates).filter(date=>date&&date>monthly.through&&!available.has(date));if(monthly.failedSymbols?.includes(m.symbol)||!(series[m.symbol]?.length))work.push({...m,patchFrom:from,repair:true});else if(missing.length)work.push({...m,patchFrom:missing.sort()[0]});}
     // A changed split basis requires a targeted history repair, not an assumed rescaling.
     for(const m of members){
      const q=quotes[m.symbol],reference=references[m.symbol],stored=(series[m.symbol]||[]).find(r=>r.date===dates.day);
@@ -75,20 +75,20 @@ export async function handleConstituents(request,env,fetchImpl=fetch,now=Date.no
     }
     job.monthly=monthly;job.mode=work.length?'incremental-backfill':'saved-monthly-history';job.work=work;
     if(!work.length)return await finish(job,series);
-   }else{job.work=members;job.monthly={signature,createdAt:now,through:asOf,chunks:[]};}
+   }else{job.work=members;job.monthly={signature,createdAt:now,through:asOf,chunks:[],failedSymbols:[]};}
    await write('constituent-job-v4:'+job.id,job);await write('constituent-active-v4:'+month,{id:job.id});
   }else if(input.action==='step'&&/^[a-f0-9-]{36}$/.test(input.id||'')){
    job=await read('constituent-job-v4:'+input.id,30*60000);if(!job||job.day!==today)throw new Error('Load session expired. Click Load returns to restart.');
    const batch=job.work.slice(job.cursor,job.cursor+12);
    if(job.mode==='monthly-rebuild'){
-    for(let i=0;i<batch.length;i+=4)await Promise.all(batch.slice(i,i+4).map(async m=>{try{const rows=await history(m.symbol,job.from);job.buffer[m.symbol]=rows;}catch(error){job.issues.push({symbol:m.symbol,reason:error.message});job.buffer[m.symbol]=[];}}));
+    for(let i=0;i<batch.length;i+=4)await Promise.all(batch.slice(i,i+4).map(async m=>{try{const rows=await history(m.symbol,job.from);job.buffer[m.symbol]=rows;}catch(error){job.issues.push({symbol:m.symbol,reason:error.message,historyRepair:true});job.monthly.failedSymbols.push(m.symbol);job.buffer[m.symbol]=[];}}));
     job.cursor+=batch.length;
     if(job.cursor%48===0||job.cursor===job.work.length){const key='constituent-series-chunk-v1:'+job.id+':'+job.chunks.length;await write(key,job.buffer);job.chunks.push(key);job.buffer={};}
    }else{
     // Repair only requested dates/securities, updating bounded month chunks.
     const chunks=new Map();
     for(const m of batch){const index=Math.floor(job.members.findIndex(r=>r.symbol===m.symbol)/48);if(!chunks.has(index))chunks.set(index,await read(job.monthly.chunks[index],LONG)||{});}
-    for(let i=0;i<batch.length;i+=4)await Promise.all(batch.slice(i,i+4).map(async m=>{try{const rows=clean(await provider('historical-price-eod/full',{symbol:m.symbol,from:m.patchFrom,to:today}),m.patchFrom,today);const index=Math.floor(job.members.findIndex(r=>r.symbol===m.symbol)/48),chunk=chunks.get(index),old=m.repair?[]:chunk[m.symbol]||[];chunk[m.symbol]=[...new Map([...old,...rows].map(r=>[r.date,r])).values()].sort((a,b)=>a.date.localeCompare(b.date));}catch(error){job.issues.push({symbol:m.symbol,reason:error.message,historyRepair:true});}}));
+    for(let i=0;i<batch.length;i+=4)await Promise.all(batch.slice(i,i+4).map(async m=>{try{const rows=clean(await provider('historical-price-eod/full',{symbol:m.symbol,from:m.patchFrom,to:today}),m.patchFrom,today);const index=Math.floor(job.members.findIndex(r=>r.symbol===m.symbol)/48),chunk=chunks.get(index),old=m.repair?[]:chunk[m.symbol]||[];chunk[m.symbol]=[...new Map([...old,...rows].map(r=>[r.date,r])).values()].sort((a,b)=>a.date.localeCompare(b.date));job.monthly.failedSymbols=(job.monthly.failedSymbols||[]).filter(s=>s!==m.symbol);}catch(error){job.issues.push({symbol:m.symbol,reason:error.message,historyRepair:true});job.monthly.failedSymbols=[...new Set([...(job.monthly.failedSymbols||[]),m.symbol])];}}));
     for(const[index,chunk]of chunks)await write(job.monthly.chunks[index],chunk);job.cursor+=batch.length;
    }
    await write('constituent-job-v4:'+job.id,job);

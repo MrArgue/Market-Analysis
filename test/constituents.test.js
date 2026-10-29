@@ -94,3 +94,10 @@ test('a changed implied share count repairs only that stock and keeps split-adju
  data=await(await handleConstituents(s.request({action:'start'}),s.env,splitFetcher,next)).json();assert.equal(data.state,'loading');assert.equal(data.total,1);const before=s.requests.length;
  data=await(await handleConstituents(s.request({action:'step',id:data.id}),s.env,splitFetcher,next)).json();assert.equal(data.state,'ready');assert.ok(Math.abs(data.groups[0].industries[0].stocks.find(q=>q.symbol==='T0').returns.year-10)<1e-9);assert.deepEqual(s.requests.slice(before).filter(r=>r.path.endsWith('/historical-price-eod/full')).map(r=>r.symbol),['T0']);
 });
+test('temporary history failures are repaired on the next refresh without rebuilding healthy month histories',async()=>{
+ const s=setup(3);let fail=true;
+ const fetcher=async url=>fail&&url.pathname.endsWith('/historical-price-eod/full')&&url.searchParams.get('symbol')==='T0'?new Response('private-secret',{status:503}):s.fetcher(url);
+ let data=await(await handleConstituents(s.request({action:'start'}),s.env,fetcher,now)).json();data=await(await handleConstituents(s.request({action:'step',id:data.id}),s.env,fetcher,now)).json();assert.equal(data.coverage.members,2);
+ fail=false;const next=now+61000;s.setTime(next);data=await(await handleConstituents(s.request({action:'start'}),s.env,fetcher,next)).json();assert.equal(data.state,'loading');assert.equal(data.total,1);const before=s.requests.length;
+ data=await(await handleConstituents(s.request({action:'step',id:data.id}),s.env,fetcher,next)).json();assert.equal(data.coverage.members,3);assert.equal(data.refresh.mode,'incremental-backfill');assert.deepEqual(s.requests.slice(before).filter(r=>r.path.endsWith('/historical-price-eod/full')).map(r=>r.symbol),['T0']);
+});
