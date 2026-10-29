@@ -104,3 +104,6 @@ test('chart displays percentiles and configured threshold legends instead of z-s
 test('insufficient percentile history is clearly unavailable rather than shown as zero',async()=>{
  const h=harness();h.data.rows.at(-1).percentile=null;h.data.rows.at(-1).percentileSample=37;await h.nodes.query.onsubmit({preventDefault(){}});assert.equal(h.nodes.percentile.textContent,'—');assert.match(h.nodes.percentile.attrs.title,/252.*37/);
 });
+test('missing current distance is distinguished from percentile-sample warmup',async()=>{
+ const h=harness();Object.assign(h.data.rows.at(-1),{percentile:null,distance:null,percentileSample:2511});await h.nodes.query.onsubmit({preventDefault(){}});assert.equal(h.nodes.percentile.textContent,'—');assert.match(h.nodes.percentile.attrs.title,/Current stock\/sector distance is unavailable/);
+});

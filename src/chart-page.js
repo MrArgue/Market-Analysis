@@ -120,7 +120,7 @@ function draw() {
  $('daily-change').textContent = dailyChange == null ? 'Daily change unavailable' : (dailyChange > 0 ? '+' : '') + dailyChange.toFixed(2) + '% daily';
  $('daily-change').setAttribute('class', 'price-change ' + (dailyChange > 0 ? 'positive' : dailyChange < 0 ? 'negative' : ''));
  $('price').textContent = fmt(last.close); $('score').textContent = fmt(last.score) + ' / 6'; $('percentile').textContent = last.percentile==null?'—':fmt(last.percentile)+'%';
- $('percentile').setAttribute('title',last.percentile==null?'Needs '+data.options.minHistory+' prior valid observations; currently '+(last.percentileSample||0):'Historical rank of stock/sector distance from its long moving average');
+ $('percentile').setAttribute('title',last.percentile==null?(last.distance===null?'Current stock/sector distance is unavailable; a valid long moving average and aligned sector prices are required.':'Needs '+data.options.minHistory+' prior valid observations; currently '+(last.percentileSample||0)):'Historical rank of stock/sector distance from its long moving average');
  $('oversold-legend').textContent='▲ Oversold ≤'+(data.options.lowerPercentile??5)+'th percentile';
  $('overbought-legend').textContent='× Overbought ≥'+(data.options.upperPercentile??95)+'th percentile';
  $('chart-title').textContent = data.symbol + ' · Technical overview';
