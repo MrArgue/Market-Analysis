@@ -16,7 +16,7 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch, nowMs =
   const from = p.get('from') || '2000-01-01', to = p.get('to') || exchangeDate(nowMs);
   if ((![symbol, benchmark].every(s => symbolPattern.test(s)) || (sector && !Object.hasOwn(sectorAliases, sector) && !Object.values(sectorEtfs).includes(sector))) || !validDate(from) || !validDate(to) || from > to || Date.parse(to) - Date.parse(from) > 40 * 366 * 86400000) return reply({ error: 'Enter valid symbols and a date range of at most 40 years.' }, 400);
   let options;
-  try { options = methodology(Object.fromEntries(['short', 'long', 'lookback', 'sigma', 'sell', 'buy', 'flat'].filter(k => p.has(k)).map(k => [k, k === 'flat' ? p.get(k) : Number(p.get(k))]))); }
+  try { options = methodology(Object.fromEntries(['short', 'long', 'lookback', 'sigma', 'lowerPercentile', 'upperPercentile', 'minHistory', 'sell', 'buy', 'flat'].filter(k => p.has(k)).map(k => [k, k === 'flat' ? p.get(k) : Number(p.get(k))]))); }
   catch { return reply({ error: 'Invalid methodology settings.' }, 400); }
   if (!env.DB?.prepare || !env.FMP_API_KEY?.trim()) return reply({ error: 'Market data requires the existing D1 binding and FMP secret.' }, 503);
   const now = nowMs, ttl = 6 * 3600000;
