@@ -63,17 +63,21 @@ test("mobile positions, strikes, presets, unsupported selection and research PDF
     mimeType: "application/pdf",
     buffer: Buffer.from(await fixture.save()),
   });
-  await page.locator("#protection-page").fill("3");
-  await page.locator("#yield-page").fill("9");
-  await page.locator("#verified").check();
-  const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download research PDF" }).click();
-  const download = await downloadPromise;
-  await download.saveAs("../fixture-proposal.pdf");
-  const pdf = await PDFDocument.load(
-    fs.readFileSync("../fixture-proposal.pdf"),
+  await expect(page.locator("#pdf-status")).toContainText(
+    "different file or version",
   );
-  expect(pdf.getPageCount()).toBe(8);
+  if (process.env.SIGNATURE_DECK_PATH) {
+    await page.locator("#deck").setInputFiles(process.env.SIGNATURE_DECK_PATH);
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download research PDF" }).click();
+    const download = await downloadPromise;
+    await download.saveAs("../reviewed-deck-browser.pdf");
+    const pdf = await PDFDocument.load(
+      fs.readFileSync("../reviewed-deck-browser.pdf"),
+    );
+    expect(pdf.getPageCount()).toBe(11);
+  }
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

@@ -4,9 +4,21 @@ import {
   signatureModel as M,
   signatureModelScript,
 } from "../src/signature-model.js";
-import { buildProposal, handleProposal } from "../src/signature-proposal.js";
+import {
+  buildProposal as buildReviewedProposal,
+  handleProposal,
+} from "../src/signature-proposal.js";
 import { PDFDocument } from "pdf-lib";
 import vm from "node:vm";
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+const buildProposal = (payload) =>
+  buildReviewedProposal(
+    payload,
+    createHash("sha256")
+      .update(Buffer.from(payload.template || "", "base64"))
+      .digest("hex"),
+  );
 const p = () => M.defaultPosition("2026-10-30");
 test("synthetic chain is expiry-specific; bounded mock Greeks and parity", () => {
   const qs = M.chain(268, "2026-10-30", "2027-01-15");
@@ -142,23 +154,16 @@ test("PDF includes one original explanation per used strategy, then only selecte
       template,
     }),
   );
-  assert.equal(doc.getPageCount(), 9);
+  assert.equal(doc.getPageCount(), 12);
   assert.equal(doc.getPage(1).getWidth(), 595.28);
   const only = await PDFDocument.load(
     await buildProposal({ positions: [x], pages: { protection: 3 }, template }),
   );
-  assert.equal(only.getPageCount(), 3);
+  assert.equal(only.getPageCount(), 6);
   await assert.rejects(
     buildProposal({
       positions: [{ ...x, strategy: "borrow" }],
       pages: {},
-      template,
-    }),
-  );
-  await assert.rejects(
-    buildProposal({
-      positions: [x, y],
-      pages: { protection: 3, yield: 3 },
       template,
     }),
   );
@@ -229,3 +234,46 @@ test("low-price chains retain protective strikes and year-end ladders start in a
     [2027, 2028, 2029],
   );
 });
+
+test("production assembly rejects substitute decks even with client fingerprint or page overrides", async () => {
+  const template = await fixture();
+  await assert.rejects(
+    buildReviewedProposal({
+      positions: [p()],
+      template,
+      pages: { protection: 4 },
+      expectedDigest: createHash("sha256")
+        .update(Buffer.from(template, "base64"))
+        .digest("hex"),
+    }),
+    /original/,
+  );
+});
+test(
+  "reviewed source deck assembly includes only selected explainers and common appendices",
+  { skip: !process.env.SIGNATURE_DECK_PATH },
+  async () => {
+    const template = fs
+      .readFileSync(process.env.SIGNATURE_DECK_PATH)
+      .toString("base64");
+    const x = p(),
+      y = { ...p(), strategy: "yield" };
+    const protection = await PDFDocument.load(
+      await buildReviewedProposal({
+        positions: [x],
+        template,
+        pages: { protection: 4 },
+      }),
+    );
+    assert.equal(protection.getPageCount(), 6);
+    assert(protection.getPages().every((p) => p.getWidth() === 1008));
+    const yieldOnly = await PDFDocument.load(
+      await buildReviewedProposal({ positions: [y], template }),
+    );
+    assert.equal(yieldOnly.getPageCount(), 9);
+    const mixed = await PDFDocument.load(
+      await buildReviewedProposal({ positions: [x, x, y], template }),
+    );
+    assert.equal(mixed.getPageCount(), 12);
+  },
+);

@@ -254,6 +254,13 @@ export function createSignatureModel() {
     );
   }
   return {
+    deck: Object.freeze({
+      sha256:
+        "5fdadb74b84641a439e7e635e0365aacca47f4368b5f3732ab899f77d52488a4",
+      pages: Object.freeze({ protection: 3, yield: 9 }),
+      cover: 1,
+      appendix: Object.freeze([13, 14]),
+    }),
     disclaimer,
     days,
     monthly,

@@ -560,28 +560,23 @@ export function signatureClient() {
       const file = $("deck").files[0];
       if (!file || file.size > 8 * 1024 * 1024)
         throw Error("Attach the original 14-page PDF, up to 8 MB.");
-      if (!$("verified").checked)
-        throw Error("Verify the explanation page numbers first.");
-      const pages = {
-        protection: Number($("protection-page").value),
-        yield: Number($("yield-page").value),
-      };
-      for (const strategy of new Set(positions.map((p) => p.strategy)))
-        if (
-          !Number.isInteger(pages[strategy]) ||
-          pages[strategy] < 1 ||
-          pages[strategy] > 14
-        )
-          throw Error("Enter an explanation page for " + strategy);
       $("pdf-status").textContent = "Assembling research PDF…";
       const bytes = new Uint8Array(await file.arrayBuffer());
+      const digest = Array.from(
+        new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+        (b) => b.toString(16).padStart(2, "0"),
+      ).join("");
+      if (digest !== M.deck.sha256)
+        throw Error(
+          "Please upload the reviewed original SEIA Signature Plus Marketing Deck. This is a different file or version.",
+        );
       let binary = "";
       for (let i = 0; i < bytes.length; i += 8192)
         binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
       const response = await fetch("/api/signature-proposal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ positions, pages, template: btoa(binary) }),
+        body: JSON.stringify({ positions, template: btoa(binary) }),
       });
       if (!response.ok) throw Error(await response.text());
       const url = URL.createObjectURL(await response.blob()),

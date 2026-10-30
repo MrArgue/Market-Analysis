@@ -1,7 +1,12 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { signatureModel as M } from "./signature-model.js";
 const MAX_BODY = 12 * 1024 * 1024;
-export async function buildProposal({ positions, pages, template }) {
+// The optional digest dependency is for local fixture tests only; HTTP always uses the reviewed deck fingerprint.
+export async function buildProposal(
+  { positions, template },
+  expectedDigest = M.deck.sha256,
+) {
+  const pages = M.deck.pages;
   if (
     !Array.isArray(positions) ||
     positions.length < 1 ||
@@ -14,17 +19,11 @@ export async function buildProposal({ positions, pages, template }) {
     p.strategy === "protection" ? M.protection(p) : M.yieldPlan(p);
   }
   const strategies = [...new Set(positions.map((p) => p.strategy))];
-  for (const s of strategies)
-    if (!Number.isInteger(pages?.[s]) || pages[s] < 1 || pages[s] > 14)
-      throw Error("Verify explanation page numbers (1–14).");
-  if (strategies.length > 1 && pages.protection === pages.yield)
-    throw Error("Use a distinct explanation page for each strategy.");
   if (
     typeof template !== "string" ||
     template.length > Math.ceil((8 * 1024 * 1024) / 3) * 4 ||
-    !/^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
-      template,
-    )
+    template.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(template)
   )
     throw Error("Attach the original PDF, up to 8 MB.");
   const bytes = Uint8Array.from(atob(template), (c) => c.charCodeAt(0));
@@ -33,6 +32,14 @@ export async function buildProposal({ positions, pages, template }) {
     new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-"
   )
     throw Error("Invalid PDF.");
+  const digest = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+    (b) => b.toString(16).padStart(2, "0"),
+  ).join("");
+  if (digest !== expectedDigest)
+    throw Error(
+      "Upload the reviewed original Signature Plus deck. This file is a different version.",
+    );
   const source = await PDFDocument.load(bytes);
   if (source.getPageCount() !== 14)
     throw Error("Expected the original 14-page Signature Plus deck.");
@@ -49,7 +56,7 @@ export async function buildProposal({ positions, pages, template }) {
     y -= size + 8;
   }
   function newPage(title) {
-    page = doc.addPage([792, 612]);
+    page = doc.addPage([1008, 612]);
     y = 565;
     page.drawText("SIGNATURE PLUS | " + title, {
       x: 40,
@@ -83,6 +90,13 @@ export async function buildProposal({ positions, pages, template }) {
         style: "currency",
         currency: "USD",
         maximumFractionDigits: 0,
+      }).format(n),
+    price = (n) =>
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
       }).format(n),
     pct = (n) => (n >= 0 ? "+" : "") + (n * 100).toFixed(0) + "%";
   function payoff(p, value, shares) {
@@ -147,12 +161,14 @@ export async function buildProposal({ positions, pages, template }) {
     "Original explanation pages are copied unchanged; historical examples may differ.",
   );
   line(
-    "Only the explanation pages identified below are included, not the full source deck.",
+    "Includes original cover, selected explanations, definitions and disclosures.",
   );
   line(strategies.map((s) => s + ": source page " + pages[s]).join(" | "));
   line(
-    "Source page content and page mappings require research/compliance review.",
+    "Research use only. Source definitions/disclosures do not approve this synthetic proposal.",
   );
+  const [cover] = await doc.copyPages(source, [M.deck.cover - 1]);
+  doc.addPage(cover);
   for (const strategy of strategies) {
     const [explanation] = await doc.copyPages(source, [pages[strategy] - 1]);
     doc.addPage(explanation);
@@ -239,10 +255,9 @@ export async function buildProposal({ positions, pages, template }) {
         line(
           "Preset " +
             p.preset +
-            " | Target mock delta " +
-            p.delta +
-            " | Premium target " +
-            money(p.income),
+            (p.preset === "income"
+              ? " | Initial premium target " + money(p.income)
+              : " | Target mock delta " + p.delta),
         );
         line(
           a.contracts +
@@ -252,9 +267,9 @@ export async function buildProposal({ positions, pages, template }) {
             money(a.premium),
         );
         line(
-          "Income target shortfall " +
-            money(a.shortfall) +
-            " | " +
+          (p.preset === "income"
+            ? "Income target shortfall " + money(a.shortfall) + " | "
+            : "") +
             p.method +
             " fills",
         );
@@ -303,7 +318,7 @@ export async function buildProposal({ positions, pages, template }) {
             "Initial premium " +
               money(r.premium) +
               " | Fill/share " +
-              money(r.fill) +
+              price(r.fill) +
               " | Valued only at " +
               r.expiry,
           );
@@ -355,6 +370,11 @@ export async function buildProposal({ positions, pages, template }) {
       }
     }
   }
+  for (const appendix of await doc.copyPages(
+    source,
+    M.deck.appendix.map((n) => n - 1),
+  ))
+    doc.addPage(appendix);
   return doc.save();
 }
 export async function handleProposal(request) {
@@ -405,7 +425,7 @@ export async function handleProposal(request) {
     });
   } catch {
     return new Response(
-      "Unable to build PDF. Check position inputs, original unencrypted 14-page PDF, and distinct verified explanation pages.",
+      "Unable to build PDF. Check position inputs, reviewed original 14-page PDF. Other deck versions are not supported.",
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }

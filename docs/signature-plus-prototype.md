@@ -21,21 +21,32 @@ Premiums and delta use a European Black-Scholes-style model with fixed 30% volat
 
 Diversification, Upside and Borrow are explicitly unavailable placeholders. They retain position inputs but produce no analytics and cannot enter a proposal. They do not silently fall back to Protection.
 
-## PDF assembly and remaining source-deck dependency
+## Verified source deck and PDF assembly
 
-The previously uploaded 14-page Signature Plus deck was **not present** in the accessible prior-chat attachments, repository, or workspace during implementation. No replacement explainer text or guessed page mapping is shipped. Exact deck integration remains a review gate for this draft PR.
+The supplied SEIA Signature Plus Marketing Deck was visually reviewed in full on October 30, 2026. It is a 14-page, unencrypted PDF with 1008 x 612 point pages. Its reviewed SHA-256 fingerprint is recorded in the shared model. This fingerprint identifies one exact file/version, not an assertion of future compliance approval.
 
-Build Proposal selects supported positions. Upload the original unencrypted 14-page PDF (maximum 8 MiB), enter the 1-based Protection/Yield explanation page numbers for strategies in use, and confirm that you verified the mapping. The application checks page count, ranges and distinct mappings; it cannot authenticate the deck or determine the semantic content of a page. A reviewer must inspect the original deck and select the right pages. Current mapping supports one explanation page per strategy; multi-page explainers and source-deck common/disclosure pages require a follow-up after reviewing the original.
+The deck is marked proprietary/confidential and the repository is public. **Do not commit the PDF, extracted artwork, rendered source pages, or assembled proposals.** No deck bytes are shipped in the app or repository. The user must upload the original file for each browser session. Browser and server verify its fingerprint; different/re-exported versions fail closed. A reviewed replacement requires updating the fingerprint, page map and validation. User-supplied page mappings and digest fields cannot change HTTP assembly behavior. Fixture tests inject a digest only as an internal function argument, which the endpoint never obtains from request data.
 
-The downloaded document contains:
+Verified source map (1-based):
 
-1. A research-only cover with model assumptions and source-page mapping.
-2. Exactly one unchanged source explanation page for each selected strategy.
-3. Each selected position's generated analytics, grouped under its strategy. Protection gets one page; Yield gets a program page and one payoff/chart page per nonzero-contract tranche.
+| Page | Role | Assembly behavior |
+| --- | --- | --- |
+| 1 | Original cover | Retained after research-only cover |
+| 2 | All-solution overview | Omitted to avoid presenting unused solutions |
+| 3 | Protection explanation | Included once only when Protection is selected |
+| 4 | Protection sample analytics | Replaced by generated position analytics |
+| 5–8 | Diversification / Upside explanations and samples | Omitted; unsupported |
+| 9 | Yield explanation | Included once only when Yield is selected |
+| 10 | Yield sample analytics | Replaced by generated position/tranche analytics |
+| 11–12 | Borrow explanation and sample | Omitted; unsupported |
+| 13 | Definitions | Always retained at end |
+| 14 | Disclosures | Always retained last |
 
-Original source pages keep their content and dimensions; their historical examples may differ from the new analytics. Source pages are not watermarked so the original explanation artwork remains constant. New pages prominently say SYNTHETIC DATA / NOT FOR CLIENT USE OR TRADING. Only selected explanation pages are copied: the full original deck and its other disclosures are **not** automatically included. This is not an approved client proposal. No signatures, PDF/A, accessibility tagging, editable forms or compliance approval workflow is provided. Generated tables round displayed dollars; calculations retain full precision.
+Build Proposal selects supported positions and automatically assembles: research-only cover; original cover; selected strategy explanation then its position analytics; definitions; disclosures. Protection gets one custom page. Yield gets a program page and one chart/scenario page per nonzero-contract tranche. Each explanation appears once even for multiple positions using that strategy. A single Protection position produces 6 pages; a three-tranche Yield position produces 9; one of each produces 11. All pages use the source 1008 x 612 point size. Source pages preserve content/dimensions unchanged and were checked by decoded PDF content streams and identical rendered PNG hashes. Source page numbers remain original; new analytics retain research-only disclaimers. Source definitions/disclosures mention other strategies as part of constant general material; their unchanged content is not a claim those strategies are implemented.
 
-The browser posts the PDF and position snapshot to `/api/signature-proposal`; the Worker assembles the result in memory, without application storage or logging of request bodies. The endpoint accepts JSON POST only, rejects explicit foreign origins, caps streamed request size at 12 MiB, validates positions and template size, and returns uncached downloads. Hosting infrastructure policies still apply. There is no new authentication layer, per-user storage or production abuse protection. Large/complex PDFs and many yield tranches can exceed hosting CPU/memory limits: production resource/performance testing is outstanding. Invalid/encrypted PDFs fail closed with a generic error.
+Generated tables round total dollars, show per-share fills to cents and retain full calculation precision. There are no signatures, PDF/A, accessibility tags, editable forms or compliance approval workflow. Preserved source pages are not watermarked. This remains a synthetic research demonstration, not an approved client proposal.
+
+The browser posts the source PDF and selected position snapshot to /api/signature-proposal. The Worker verifies the file and assembles the result in memory, without application storage or logging of request bodies. Upload is limited to 8 MiB; streamed JSON is capped at 12 MiB. The endpoint accepts JSON POST only, rejects explicit foreign origins, validates positions, and returns uncached downloads. Hosting policies still apply. There is no new authentication, per-user storage or production abuse protection. The real 6.8 MB source succeeded through the local Worker/browser download; production-host CPU/memory/load validation remains outstanding. The larger real file also exposed and resolved a repetitive-base64-regex stack overflow missed by the small fixture.
 
 ## Validation
 
@@ -43,6 +54,6 @@ Install with `npm ci`; run `npm test` and `npm run build` (dry run only). For br
 
 Unit coverage includes parity/Greek bounds, contract multipliers and residuals, descending scenarios, signed differences, expiry changes, year rollover, tax-year uniqueness, shortfall handling, manual strikes, small holdings, invalid inputs, template page selection and request rejection. A bundled-model regression test guards serialization against build-generated helper references.
 
-The browser test uses a **clearly labeled, generated test fixture**, not the missing Signature Plus source deck. It exercises 390px mobile controls and horizontal table containment, independent positions, collapse/reopen, keyboard slider snapping, all presets, unsupported strategy exclusion and a real local-Worker PDF download, plus a 1440px desktop snapshot. This is Chromium mobile viewport testing, not physical iPhone/Safari validation. Existing research route tests remain part of the full suite.
+The default browser test verifies a clearly labeled synthetic substitute is rejected. Set SIGNATURE_DECK_PATH to a local copy of the reviewed original to also exercise the real download. The optional source-deck unit integration test uses the same environment variable. Never commit that local file. It exercises 390px mobile controls and horizontal table containment, independent positions, collapse/reopen, keyboard slider snapping, all presets, unsupported strategy exclusion and a real local-Worker PDF download, plus a 1440px desktop snapshot. This is Chromium mobile viewport testing, not physical iPhone/Safari validation. Existing research route tests remain part of the full suite.
 
-Before merge: supply and inspect the original deck, confirm source page mappings/disclosures, review generated PDFs against it, and run intended-host performance checks. Before any client use: replace synthetic data and complete financial, tax, compliance and security review.
+Validated locally with the real deck: all 152 unit/route/bundle/PDF tests pass (including the optional source integration), mobile browser test downloads the assembled proposal, build dry run passes, and all pages of an 11-page mixed example were rendered and reviewed. Before merge: complete business/compliance review of source and generated materials and run intended-host performance checks. Before any client use: replace synthetic data and complete financial, tax, compliance and security review.
