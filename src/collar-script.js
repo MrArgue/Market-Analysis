@@ -1,4 +1,4 @@
-export const collarScript = String.raw\`
+export const collarScript = String.raw`
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -87,4 +87,4 @@ export const collarScript = String.raw\`
   $('auto').addEventListener('click',findZero);
   $('reset').addEventListener('click',()=>{$('stock').value=268;$('shares').value=20000;$('days').value=365;$('method').value='conservative';state.initial=true;if(makeOptions())compute()});
   if(makeOptions())compute();
-})();\`;
+})();`;
