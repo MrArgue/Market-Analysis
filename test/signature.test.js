@@ -277,3 +277,32 @@ test(
     assert.equal(mixed.getPageCount(), 12);
   },
 );
+
+test("only chain-listed monthly expirations are selectable for Protection and Yield", () => {
+  const available = M.optionExpirations("AAPL", "2026-10-30");
+  assert.equal(available.length, 60);
+  assert.deepEqual(available.slice(0, 3), [
+    "2026-11-20",
+    "2026-12-18",
+    "2027-01-15",
+  ]);
+  assert.equal(M.days("2026-10-30", available[0]), 21);
+  assert(!available.includes("2026-11-21"));
+  assert.throws(
+    () => M.protection({ ...p(), expiry: "2026-11-21" }),
+    /available expiration/,
+  );
+  assert.throws(
+    () =>
+      M.yieldPlan({
+        ...p(),
+        strategy: "yield",
+        expiries: ["2026-11-21", "2026-12-18", "2027-01-15"],
+      }),
+    /available expirations/,
+  );
+  assert.deepEqual(M.optionExpirations("AAPL", "2026-11-20").slice(0, 2), [
+    "2026-12-18",
+    "2027-01-15",
+  ]);
+});

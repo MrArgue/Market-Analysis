@@ -97,6 +97,31 @@ export function signatureClient() {
       "</select></label></div>"
     );
   }
+  function expirationField(p, key, label, value) {
+    let expirations;
+    try {
+      expirations = M.optionExpirations(p.symbol, p.asOf);
+    } catch {
+      return "";
+    }
+    return select(
+      key,
+      label,
+      expirations.map((expiry) => [
+        expiry,
+        new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC",
+        }).format(new Date(expiry + "T00:00:00Z")) +
+          " (" +
+          M.days(p.asOf, expiry) +
+          " days)",
+      ]),
+      value,
+    );
+  }
   function table(head, rows) {
     return (
       '<div class="card table-card"><h2>' +
@@ -371,7 +396,7 @@ export function signatureClient() {
       if (p.strategy === "protection") {
         sync(p);
         controls =
-          input("expiry", "Both legs expire", p.expiry, "date") +
+          expirationField(p, "expiry", "Protection term", p.expiry) +
           strikeField(p, "put", "put", p.expiry, p.put) +
           strikeField(p, "call", "call", p.expiry, p.call) +
           '<button class="primary" data-auto>Find near-zero-cost collar</button>';
@@ -417,7 +442,7 @@ export function signatureClient() {
               " · " +
               r.contracts +
               " contracts</legend>" +
-              input("expiry-" + i, "Expiration", r.expiry, "date") +
+              expirationField(p, "expiry-" + i, "Expiration", r.expiry) +
               select(
                 "strike-" + i,
                 "Call strike (editable)",
@@ -438,15 +463,15 @@ export function signatureClient() {
         (p.strategy === "yield"
           ? p.expiries
               .map((e, i) =>
-                input(
+                expirationField(
+                  p,
                   "expiry-" + i,
                   "Tranche " + (i + 1) + " expiry",
                   e,
-                  "date",
                 ),
               )
               .join("")
-          : input("expiry", "Protection expiry", p.expiry, "date")) +
+          : expirationField(p, "expiry", "Protection term", p.expiry)) +
         "<button data-repair>Reset strategy settings</button>";
     }
     root.querySelector(".position-body").innerHTML =

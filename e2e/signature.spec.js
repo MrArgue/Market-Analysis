@@ -12,6 +12,26 @@ test("mobile positions, strikes, presets and deferred PDF", async ({
   await expect(page.locator('[data-key="asOf"]')).toHaveCount(0);
   await expect(page.locator("#valuation-stamp")).toContainText("As of");
   const first = page.locator("details").first();
+  await expect(first.locator('input[type="date"]')).toHaveCount(0);
+  const expiration = first.locator('select[data-key="expiry"]');
+  await expect(expiration.locator("option:checked")).toHaveText(
+    /^[A-Z][a-z]{2} \d{1,2}, \d{4} \(\d+ days\)$/,
+  );
+  const expiryBefore = await expiration.inputValue();
+  await expiration.selectOption({ index: 0 });
+  await expect(first.locator(".table-card").last()).not.toContainText(
+    expiryBefore,
+  );
+  await expect(first.locator(".table-card").last()).toContainText(
+    await expiration.inputValue(),
+  );
+  const header = first.locator("thead th").first();
+  expect(
+    await header.evaluate((el) => getComputedStyle(el).backgroundColor),
+  ).toBe("rgb(31, 43, 47)");
+  expect(await header.evaluate((el) => getComputedStyle(el).color)).toBe(
+    "rgb(240, 234, 213)",
+  );
   await expect(first.locator(".results")).toContainText("200 contracts");
   await expect(
     first.locator("tbody").first().locator("tr").first(),
@@ -53,6 +73,8 @@ test("mobile positions, strikes, presets and deferred PDF", async ({
   await expect(second.locator('[data-key="delta"]')).toHaveValue("0.2");
   await second.locator('[data-key="preset"]').selectOption("ladder");
   await expect(second.locator("fieldset")).toHaveCount(3);
+  await expect(second.locator('input[type="date"]')).toHaveCount(0);
+  await expect(second.locator('select[data-key^="expiry-"]')).toHaveCount(3);
   await second.locator('[data-key="years"]').fill("4");
   await second.locator('[data-key="years"]').blur();
   await expect(second.locator("fieldset")).toHaveCount(4);
@@ -64,6 +86,11 @@ test("mobile positions, strikes, presets and deferred PDF", async ({
   const third = page.locator("details").nth(2);
   await third.locator('[data-key="strategy"]').selectOption("borrow");
   await expect(third.locator(".results")).toContainText("placeholder");
+  await third.locator('[data-key="symbol"]').fill("?");
+  await third.locator('[data-key="symbol"]').blur();
+  await expect(third.locator(".error").first()).toContainText("valid symbol");
+  await third.locator('[data-key="symbol"]').fill("NVDA");
+  await third.locator('[data-key="symbol"]').blur();
   await expect(page.locator("#build")).toBeDisabled();
   await expect(page.locator("#proposal")).toBeHidden();
   expect(
@@ -84,7 +111,16 @@ test("mobile positions, strikes, presets and deferred PDF", async ({
     await page
       .locator("html")
       .evaluate((el) => getComputedStyle(el).backgroundColor),
-  ).toBe("rgb(247, 248, 250)");
+  ).toBe("rgb(240, 234, 213)");
+  await page.evaluate(async () => {
+    await document.fonts.load('16px "Albert Sans"');
+  });
+  expect(
+    await page.evaluate(() => document.fonts.check('16px "Albert Sans"')),
+  ).toBe(true);
+  expect(
+    await page.locator("h1").evaluate((el) => getComputedStyle(el).fontFamily),
+  ).toContain("Optima nova");
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "../restored-desktop.png" });
   await page.screenshot({ path: "../desktop-proposal.png", fullPage: true });

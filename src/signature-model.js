@@ -43,6 +43,12 @@ export function createSignatureModel() {
     }
     return out;
   }
+  // Synthetic chain calendar adapter. A live provider must supply the symbol's actual listed expirations.
+  function optionExpirations(symbol, asOf) {
+    if (!/^[A-Z][A-Z0-9.-]{0,14}$/.test(symbol))
+      throw Error("Enter a valid symbol label.");
+    return monthly(asOf, 60);
+  }
   function chain(S, asOf, expiry) {
     const D = days(asOf, expiry);
     if (!Number.isFinite(S) || S < 1 || S > 5000 || D <= 0 || D > 3650)
@@ -111,6 +117,8 @@ export function createSignatureModel() {
   }
   function protection(p) {
     validate(p);
+    if (!optionExpirations(p.symbol, p.asOf).includes(p.expiry))
+      throw Error("Choose an available expiration.");
     const quotes = chain(p.S, p.asOf, p.expiry),
       put = quotes.find((q) => q.type === "put" && q.strike === p.put),
       call = quotes.find((q) => q.type === "call" && q.strike === p.call);
@@ -163,6 +171,8 @@ export function createSignatureModel() {
       throw Error(
         "Tax-aware ladder needs one expiry in each consecutive calendar year.",
       );
+    if (expiries.some((e) => !optionExpirations(p.symbol, p.asOf).includes(e)))
+      throw Error("Choose available expirations for every tranche.");
     const total = Math.floor(p.shares / 100),
       base = Math.floor(total / expiries.length),
       extra = total % expiries.length;
@@ -264,6 +274,7 @@ export function createSignatureModel() {
     disclaimer,
     days,
     monthly,
+    optionExpirations,
     chain,
     nearest,
     fill,
