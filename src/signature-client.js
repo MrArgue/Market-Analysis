@@ -22,6 +22,43 @@ export function signatureClient() {
           "'": "&#39;",
         })[c],
     );
+  const today = () => {
+    const d = new Date();
+    return (
+      d.getFullYear() +
+      "-" +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(d.getDate()).padStart(2, "0")
+    );
+  };
+  function timestamp() {
+    const d = new Date();
+    $("valuation-stamp").dateTime = d.toISOString();
+    $("valuation-stamp").textContent =
+      "As of " +
+      new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(d) +
+      " (" +
+      Intl.DateTimeFormat().resolvedOptions().timeZone +
+      ")";
+  }
+  function refreshToday() {
+    const date = today();
+    for (const s of states) {
+      if (s.p.asOf === date) continue;
+      s.p.asOf = date;
+      if (M.days(date, s.p.expiry) <= 0) s.p.expiry = M.monthly(date, 12)[11];
+      if (s.p.expiries.some((e) => M.days(date, e) <= 0)) {
+        s.p.expiries = M.presetExpiries(s.p);
+        s.p.strikes = [];
+      }
+      render(s);
+    }
+    timestamp();
+  }
   const supported = (p) => ["protection", "yield"].includes(p.strategy);
   function input(key, label, value, type = "number", attrs = "") {
     return (
@@ -62,7 +99,15 @@ export function signatureClient() {
   }
   function table(head, rows) {
     return (
-      '<div class="scroll"><table><thead><tr>' +
+      '<div class="card table-card"><h2>' +
+      (head[0] === "Leg"
+        ? "Option legs"
+        : head[0] === "Stock return"
+          ? "Expiration scenarios"
+          : head[0] === "Expiry / planned year"
+            ? "Call schedule"
+            : "Tranche scenarios") +
+      '</h2><div class="scroll"><table><thead><tr>' +
       head.map((h) => "<th>" + h + "</th>").join("") +
       "</tr></thead><tbody>" +
       rows
@@ -70,7 +115,7 @@ export function signatureClient() {
           (r) => "<tr>" + r.map((c) => "<td>" + c + "</td>").join("") + "</tr>",
         )
         .join("") +
-      "</tbody></table></div>"
+      "</tbody></table></div></div>"
     );
   }
   function strikes(p, type, expiry) {
@@ -79,31 +124,34 @@ export function signatureClient() {
         q.type === type && (type === "put" ? q.strike < p.S : q.strike > p.S),
     );
   }
+  const strikeText = (p, value) =>
+    money(value) + " · " + pct(value / p.S - 1) + " vs. stock";
   function strikeField(p, key, type, expiry, value) {
     const qs = strikes(p, type, expiry),
       idx = qs.findIndex((q) => q.strike === value);
     return (
+      '<div class="strike-field">' +
       select(
         key,
         type === "put" ? "Protective put strike" : "Covered call strike",
         qs.map((q) => [q.strike, money(q.strike)]),
         value,
       ) +
-      "<label>Slide " +
+      '<label class="slider-label"><span class="sr-only">Adjust ' +
       type +
-      ' strike<input type="range" data-strike="' +
+      ' strike</span><input type="range" data-strike="' +
       key +
       '" min="0" max="' +
       (qs.length - 1) +
       '" step="1" value="' +
       idx +
       '" aria-valuetext="' +
-      money(value) +
-      '"><span class="muted">Snaps to ' +
-      qs.length +
-      " available synthetic strikes for " +
-      esc(expiry) +
-      "</span></label>"
+      strikeText(p, value) +
+      '"><output data-strike-output="' +
+      key +
+      '">' +
+      strikeText(p, value) +
+      "</output></label></div>"
     );
   }
   function sync(p) {
@@ -127,7 +175,7 @@ export function signatureClient() {
     const X = (v) => 55 + ((v / p.S - 0.4) / 1.2) * 600,
       Y = (v) => 260 - ((v - min) / (max - min)) * 225;
     return (
-      '<svg class="chart" viewBox="0 0 700 300" role="img" aria-label="Protection versus unhedged value at ' +
+      '<div class="card chart-card"><h2>Position value at expiration</h2><svg class="chart" viewBox="0 0 700 300" role="img" aria-label="Protection versus unhedged value at ' +
       esc(p.expiry) +
       '"><text x="55" y="20">Value at ' +
       esc(p.expiry) +
@@ -136,7 +184,7 @@ export function signatureClient() {
         .map(
           (k, i) =>
             '<polyline fill="none" stroke="' +
-            (i ? "#9b702e" : "#667985") +
+            (i ? "#b58b45" : "#aab4bc") +
             '" stroke-width="3" points="' +
             pts.map((v) => X(v.end) + "," + Y(v[k])).join(" ") +
             '"/>',
@@ -146,7 +194,7 @@ export function signatureClient() {
       money(p.S * 0.4) +
       '</text><text x="450" y="285">' +
       money(p.S * 1.6) +
-      '</text></svg><p class="muted">Gold: protection including premium. Gray: unhedged stock. No taxes or fees.</p>'
+      '</text></svg><p class="muted">Gold: protection including premium. Gray: unhedged stock. No taxes or fees.</p></div>'
     );
   }
   function analysis(p) {
@@ -159,7 +207,41 @@ export function signatureClient() {
     if (p.strategy === "protection") {
       const a = M.protection(p);
       return (
-        "<h3>Zero-Cost Collar Simulator</h3><p>" +
+        '<div class="metrics">' +
+        [
+          [
+            "Stock position",
+            money(p.S * p.shares),
+            a.contracts + " contracts / leg",
+          ],
+          [
+            "Net option premium",
+            money(a.net),
+            a.net >= 0 ? "Credit received" : "Debit paid",
+          ],
+          [
+            "Expiration floor",
+            money(a.value(0)),
+            pct(a.value(0) / (p.S * p.shares) - 1) + " vs. entry",
+          ],
+          [
+            a.remainder ? "Value at call strike" : "Expiration cap",
+            money(a.value(p.call)),
+            pct(a.value(p.call) / (p.S * p.shares) - 1) + " vs. entry",
+          ],
+        ]
+          .map(
+            ([label, value, note]) =>
+              '<div class="metric"><small>' +
+              label +
+              "</small><strong>" +
+              value +
+              "</strong><em>" +
+              note +
+              "</em></div>",
+          )
+          .join("") +
+        '</div><p class="status">' +
         a.contracts +
         " contracts per leg; " +
         a.covered +
@@ -277,6 +359,8 @@ export function signatureClient() {
     );
   }
   function render(s) {
+    timestamp();
+    s.p.asOf = today();
     const p = s.p,
       root = s.root;
     root.querySelector("summary").textContent =
@@ -290,7 +374,7 @@ export function signatureClient() {
           input("expiry", "Both legs expire", p.expiry, "date") +
           strikeField(p, "put", "put", p.expiry, p.put) +
           strikeField(p, "call", "call", p.expiry, p.call) +
-          "<button data-auto>Find near-zero-cost collar</button>";
+          '<button class="primary" data-auto>Find near-zero-cost collar</button>';
       } else if (p.strategy === "yield") {
         controls =
           select(
@@ -366,7 +450,7 @@ export function signatureClient() {
         "<button data-repair>Reset strategy settings</button>";
     }
     root.querySelector(".position-body").innerHTML =
-      '<div class="grid">' +
+      '<aside class="card position-inputs"><h2>Position &amp; contract settings</h2><div class="input-grid">' +
       input(
         "symbol",
         "Symbol (synthetic label)",
@@ -388,7 +472,6 @@ export function signatureClient() {
         "number",
         'min="100" max="10000000" step="1"',
       ) +
-      input("asOf", "Valuation date", p.asOf, "date") +
       select(
         "strategy",
         "Strategy",
@@ -410,9 +493,9 @@ export function signatureClient() {
         ],
         p.method,
       ) +
-      '</div><div class="grid">' +
+      '</div><hr class="divider"><h2>Strategy construction</h2><div class="strategy-controls">' +
       controls +
-      '</div><div class="results" aria-live="polite"></div><button data-remove>Remove position</button>';
+      '</div><hr class="divider"><button data-remove>Remove position</button></aside><section class="results" aria-live="polite"></section>';
     try {
       root.querySelector(".results").innerHTML = analysis(p);
     } catch (e) {
@@ -447,17 +530,19 @@ export function signatureClient() {
   }
   function add() {
     if (states.length >= 10) return;
-    const p = M.defaultPosition(new Date().toLocaleDateString("en-CA")),
+    const p = M.defaultPosition(today()),
       root = document.createElement("details");
-    root.className = "card";
+    root.className = "position";
     root.open = true;
-    root.innerHTML = '<summary></summary><div class="position-body"></div>';
+    root.innerHTML =
+      '<summary></summary><div class="position-body layout"></div>';
     $("positions").append(root);
     const s = { p, root, include: true };
     states.push(s);
     root.addEventListener("change", (e) => {
       const k = e.target.dataset.key;
       if (!k) return;
+      refreshToday();
       let v = e.target.value;
       if (
         ["S", "shares", "put", "call", "delta", "income", "years"].includes(k)
@@ -469,7 +554,7 @@ export function signatureClient() {
       } else if (k.startsWith("strike-"))
         p.strikes[+k.split("-")[1]] = Number(v);
       else p[k] = k === "symbol" ? v.toUpperCase() : v;
-      if (["preset", "years", "asOf"].includes(k)) {
+      if (["preset", "years"].includes(k)) {
         try {
           p.expiries = M.presetExpiries(p);
           p.strikes = [];
@@ -481,12 +566,19 @@ export function signatureClient() {
     root.addEventListener("input", (e) => {
       const k = e.target.dataset.strike;
       if (k) {
+        if (p.asOf !== today()) {
+          refreshToday();
+          return;
+        }
+        timestamp();
         p[k] = strikes(p, k === "put" ? "put" : "call", p.expiry)[
           +e.target.value
         ].strike;
         const select = root.querySelector('[data-key="' + k + '"]');
         select.value = p[k];
-        e.target.setAttribute("aria-valuetext", money(p[k]));
+        e.target.setAttribute("aria-valuetext", strikeText(p, p[k]));
+        root.querySelector('[data-strike-output="' + k + '"]').textContent =
+          strikeText(p, p[k]);
         root.querySelector(".results").innerHTML = analysis(p);
       }
     });
@@ -594,6 +686,11 @@ export function signatureClient() {
     }
   });
   add();
+  setInterval(refreshToday, 60000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshToday();
+  });
+  window.addEventListener("focus", refreshToday);
 }
 export const signatureScript =
   "(()=>{const __name=(fn)=>fn;(" + signatureClient.toString() + ")();})();";

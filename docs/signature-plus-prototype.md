@@ -4,6 +4,7 @@ The `/collar` route now provides a multi-position proposal studio. Existing `/`,
 
 ## Supported behavior
 
+- The original navy/gold palette and gray background are retained. Each expanded stock uses a 340px left input panel and right analytics area on desktop; mobile stacks inputs above analytics. Valuation always uses the browser's current local calendar date, shown with a date/time/timezone stamp at the top instead of an editable field. The date refreshes on interaction, tab focus/visibility and each minute; past expiries roll to future preset dates at midnight. Strike sliders display the selected dollar strike and percentage versus the reference stock price and use the original gold accent.
 - Up to 10 independent positions in native, keyboard-accessible collapsible sections. Collapse preserves all settings; removing a position deletes it. State is in memory only and disappears on reload.
 - Protection: descending stock-return scenarios, signed red/green differences, expiry-specific strike dropdowns and keyboard-operable index sliders. Both legs always share the selected expiry; there is no misleading payoff for mismatched expirations. The zero-cost finder retains the selected put and picks the highest affordable call, or the closest available debit.
 - Whole standard 100-share contracts. Protection hedges floor(shares/100) contracts per leg, and shows residual unhedged shares. Yield never sells more calls than the owned shares cover.

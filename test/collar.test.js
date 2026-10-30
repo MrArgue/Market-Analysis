@@ -7,7 +7,7 @@ test('collar prototype route serves its interface', async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/html/);
   const html = await response.text();
-  assert.match(html, /Signature Plus Proposal Studio/);
+  assert.match(html, /Signature Plus Simulator/);
   assert.match(html, /SIMULATED DATA/);
   assert.match(html, /\/collar\.js/);
 });
