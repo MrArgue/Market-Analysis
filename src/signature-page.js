@@ -1,0 +1,18 @@
+import { collarPage as legacy } from "./collar-page.js";
+export const signaturePage = legacy
+  .replace(
+    /<title>.*?<\/title>/,
+    "<title>Signature Plus | Proposal Studio</title>",
+  )
+  .replace(
+    "</style>",
+    `summary{cursor:pointer;font-weight:750;padding:15px;min-height:48px}details{margin:16px 0}.position-body{padding:0 15px 15px}.positive{color:#17633e}.negative{color:#b02b25}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.grid>*{min-width:0}input[type=checkbox]{width:auto}input[type=range]{padding:10px 0;min-height:44px}button,input,select{min-height:44px}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #2a6fa5;outline-offset:2px}fieldset{border:1px solid #d1d8dc;border-radius:8px;margin:15px 0}#proposal{margin-top:24px}.error{font-weight:650}h3{font-size:16px}table{margin-bottom:12px}.chart{max-height:300px}.toolbar{display:flex;gap:10px;flex-wrap:wrap}main{max-width:1240px}label{margin-top:8px}.notice{background:#fff3d9;padding:14px;border-radius:8px;margin:16px 0}body{overflow-wrap:anywhere}details.card{padding:0}.scroll{max-width:100%}</style>`,
+  )
+  .replace(
+    /<main>[\s\S]*<\/main>/,
+    `<main><div class="eyebrow">Research demonstration</div><h1>Signature Plus Proposal Studio</h1><p>Protection and Yield illustrations for multiple positions. Synthetic data only — not for client use, trading, or tax advice. Positions remain in this browser tab and are not saved.</p><div id="positions"></div><div class="toolbar"><button id="add">Add position</button><button class="primary" id="build">Build Proposal</button></div><section id="proposal" class="card" hidden><h2>Build research PDF</h2><p>Select the positions to include. Each strategy explanation appears once, ahead of its customized position analytics. Unsupported strategies cannot be included.</p><div id="include"></div><label for="deck">Original 14-page Signature Plus deck (PDF, up to 8 MB)</label><input id="deck" type="file" accept="application/pdf"><p class="muted">The earlier upload is unavailable in this prototype. Attach the original PDF and verify the explanation page numbers below. The PDF stays in memory and is sent only to this application to assemble the download; it is not stored by the application.</p><div class="grid"><div><label for="protection-page">Protection explanation page (1–14)</label><input id="protection-page" type="number" min="1" max="14"></div><div><label for="yield-page">Yield explanation page (1–14)</label><input id="yield-page" type="number" min="1" max="14"></div></div><label><input id="verified" type="checkbox"> I verified these page numbers against the uploaded deck.</label><button id="download" class="primary">Download research PDF</button><div id="pdf-status" role="status"></div></section><p class="muted" style="margin-top:24px">Model: European Black-Scholes-style synthetic quotes; volatility 30%, rate 4%, dividend yield 0.5%. Mock delta is not an assignment probability. American exercise, dividends, taxes, fees, liquidity, and changes before expiry are not modeled. Diversification, Upside, and Borrow are placeholders.</p></main>`,
+  )
+  .replace(
+    '<script src="/collar.js"></script>',
+    '<script src="/signature-model.js"></script><script src="/collar.js"></script>',
+  );

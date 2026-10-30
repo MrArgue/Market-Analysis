@@ -7,7 +7,7 @@ test('collar prototype route serves its interface', async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/html/);
   const html = await response.text();
-  assert.match(html, /Zero-Cost Collar Simulator/);
+  assert.match(html, /Signature Plus Proposal Studio/);
   assert.match(html, /SIMULATED DATA/);
   assert.match(html, /\/collar\.js/);
 });
@@ -16,7 +16,7 @@ test('collar simulator JavaScript is self-hosted', async () => {
   const response = await worker.fetch(new Request('https://example.com/collar.js'));
   assert.equal(response.status, 200);
   const script = await response.text();
-  assert.match(script, /function fairValue/);
+  assert.match(script, /function signatureClient/);
   assert.match(script, /function findZero/);
 });
 

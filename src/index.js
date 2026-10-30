@@ -1,5 +1,7 @@
-import { collarPage } from './collar-page.js';
-import { collarScript } from './collar-script.js';
+import { signaturePage as collarPage } from './signature-page.js';
+import { signatureModelScript } from './signature-model.js';
+import { handleProposal } from './signature-proposal.js';
+import { signatureScript as collarScript } from './signature-client.js';
 import { handleConstituents } from './constituent-data.js';
 import { sectorPage, sectorScript } from './sector-page.js';
 import { handleDiagnostics } from './diagnostics.js';
@@ -11,6 +13,8 @@ import { sampleScript } from './sample-data.js';
 export default {
   fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname;
+    if (path === '/api/signature-proposal') return handleProposal(request);
+    if (path === '/signature-model.js' && ['GET','HEAD'].includes(request.method)) return new Response(request.method === 'HEAD' ? null : signatureModelScript, {headers:{'Content-Type':'text/javascript; charset=utf-8','X-Content-Type-Options':'nosniff'}});
     if (path === '/diagnostics' || path.startsWith('/diagnostics/')) return handleDiagnostics(request, env, ctx);
     if (path === '/api/sectors') return handleConstituents(request, env);
     if (path === '/api/chart') return handleMarket(request, env, ctx);
