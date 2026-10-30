@@ -306,3 +306,29 @@ test("only chain-listed monthly expirations are selectable for Protection and Yi
     "2027-01-15",
   ]);
 });
+
+test("collar chart axes cover stock/strikes and all payoff values across position sizes", () => {
+  for (const x of [
+    p(),
+    { ...p(), S: 1, put: 0.9, call: 1.2, shares: 101 },
+    { ...p(), S: 5000, put: 4500, call: 9500, shares: 10000000 },
+  ]) {
+    const chart = M.collarChart(x);
+    assert(chart.x.min <= Math.min(x.S, x.put));
+    assert(chart.x.max >= x.call);
+    assert(chart.x.max > chart.x.min);
+    assert(chart.y.max > chart.y.min);
+    assert(chart.x.ticks.length >= 3 && chart.x.ticks.length <= 8);
+    assert(chart.y.ticks.length >= 3 && chart.y.ticks.length <= 8);
+    for (const point of chart.points) {
+      assert(point.stock >= chart.y.min && point.stock <= chart.y.max);
+      assert(point.collar >= chart.y.min && point.collar <= chart.y.max);
+      assert.equal(point.collar, M.protection(x).value(point.price));
+    }
+    assert(chart.points.some((pt) => pt.price === x.put));
+    assert(chart.points.some((pt) => pt.price === x.call));
+  }
+  const initial = M.collarChart(p());
+  assert(M.collarChart({ ...p(), shares: 40000 }).y.max > initial.y.max);
+  assert(M.collarChart({ ...p(), call: 530 }).x.max > initial.x.max);
+});
