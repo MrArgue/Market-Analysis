@@ -21,7 +21,11 @@ Premiums and delta use a European Black-Scholes-style model with fixed 30% volat
 
 Diversification, Upside and Borrow are explicitly unavailable placeholders. They retain position inputs but produce no analytics and cannot enter a proposal. They do not silently fall back to Protection.
 
-## Verified source deck and PDF assembly
+## Production scope
+
+At the user's request, PDF output is postponed. The Build Proposal button is disabled and the proposal HTTP endpoint returns 503 without parsing uploads. The PDF implementation remains available for future development and unit tests, but is excluded from the deployed Worker import graph. Production testing focuses on multiple positions, Protection controls and covered-call Yield presets.
+
+## Deferred: verified source deck and PDF assembly
 
 The supplied SEIA Signature Plus Marketing Deck was visually reviewed in full on October 30, 2026. It is a 14-page, unencrypted PDF with 1008 x 612 point pages. Its reviewed SHA-256 fingerprint is recorded in the shared model. This fingerprint identifies one exact file/version, not an assertion of future compliance approval.
 

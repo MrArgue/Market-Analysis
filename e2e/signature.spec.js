@@ -1,8 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { PDFDocument } from "pdf-lib";
-import fs from "node:fs";
 test.use({ viewport: { width: 390, height: 844 } });
-test("mobile positions, strikes, presets, unsupported selection and research PDF", async ({
+test("mobile positions, strikes, presets and deferred PDF", async ({
   page,
 }) => {
   const errors = [];
@@ -51,33 +49,8 @@ test("mobile positions, strikes, presets, unsupported selection and research PDF
   const third = page.locator("details").nth(2);
   await third.locator('[data-key="strategy"]').selectOption("borrow");
   await expect(third.locator(".results")).toContainText("placeholder");
-  await page
-    .getByRole("button", { name: "Build Proposal", exact: true })
-    .click();
-  await expect(page.locator('[data-include="2"]')).toBeDisabled();
-  const fixture = await PDFDocument.create();
-  for (let i = 1; i <= 14; i++)
-    fixture.addPage().drawText("TEST FIXTURE ONLY - PAGE " + i);
-  await page.locator("#deck").setInputFiles({
-    name: "test-fixture.pdf",
-    mimeType: "application/pdf",
-    buffer: Buffer.from(await fixture.save()),
-  });
-  await page.getByRole("button", { name: "Download research PDF" }).click();
-  await expect(page.locator("#pdf-status")).toContainText(
-    "different file or version",
-  );
-  if (process.env.SIGNATURE_DECK_PATH) {
-    await page.locator("#deck").setInputFiles(process.env.SIGNATURE_DECK_PATH);
-    const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Download research PDF" }).click();
-    const download = await downloadPromise;
-    await download.saveAs("../reviewed-deck-browser.pdf");
-    const pdf = await PDFDocument.load(
-      fs.readFileSync("../reviewed-deck-browser.pdf"),
-    );
-    expect(pdf.getPageCount()).toBe(11);
-  }
+  await expect(page.locator("#build")).toBeDisabled();
+  await expect(page.locator("#proposal")).toBeHidden();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

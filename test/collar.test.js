@@ -24,3 +24,5 @@ test('existing market route remains available', async () => {
   const response = await worker.fetch(new Request('https://example.com/'));
   assert.equal(response.status, 200);
 });
+
+test('PDF output is unavailable during page-only production testing',async()=>{const r=await worker.fetch(new Request('https://example.com/api/signature-proposal',{method:'POST'}));assert.equal(r.status,503);assert.match(await r.text(),/postponed/);});
