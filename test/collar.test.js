@@ -9,6 +9,8 @@ test('collar prototype route serves its interface', async () => {
   const html = await response.text();
   assert.match(html, /Signature Plus Simulator/);
   assert.match(html, /SIMULATED DATA/);
+  assert.match(html, /font-family:'Albert Sans'/);
+  assert.match(response.headers.get('content-security-policy'), /font-src 'self' https:\/\/fonts\.gstatic\.com/);
   assert.match(html, /\/collar\.js/);
 });
 
