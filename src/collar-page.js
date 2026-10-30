@@ -1,4 +1,4 @@
-export const collarPage = String.raw\`<!doctype html>
+export const collarPage = String.raw`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Signature Plus | Collar Simulator</title>
 <style>
@@ -45,4 +45,4 @@ button{border:1px solid #d3d8dc;border-radius:8px;background:#fff;padding:10px 1
 <div class="muted">Payoff includes the initial net option premium; does not include commissions, taxes, or changes before expiration.</div></div>
 <div class="card"><div class="controls" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">Expiration scenarios</h2><span class="muted">Stock prices vs. today's reference</span></div><div class="scroll"><table><thead><tr><th>Stock return</th><th>Stock price</th><th>Unhedged value</th><th>Collar value</th><th>Difference</th></tr></thead><tbody id="scenario"></tbody></table></div></div>
 <div class="card" style="margin-top:16px"><h2>Option legs</h2><div class="scroll"><table><thead><tr><th>Leg</th><th>Strike</th><th>Bid</th><th>Ask</th><th>Assumed fill</th><th>Cash flow</th></tr></thead><tbody id="legs"></tbody></table></div></div>
-</section></div></main><script src="/collar.js"></script></body></html>\`;
+</section></div></main><script src="/collar.js"></script></body></html>`;
