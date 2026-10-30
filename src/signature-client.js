@@ -190,36 +190,141 @@ export function signatureClient() {
       }
     }
   }
-  function plot(p, a) {
-    const pts = Array.from({ length: 61 }, (_, i) => {
-        const end = p.S * (0.4 + i * 0.02);
-        return { end, stock: end * p.shares, value: a.value(end) };
-      }),
-      max = Math.max(...pts.map((v) => Math.max(v.stock, v.value))) * 1.05,
-      min = Math.min(0, ...pts.map((v) => v.value));
-    const X = (v) => 55 + ((v / p.S - 0.4) / 1.2) * 600,
-      Y = (v) => 260 - ((v - min) / (max - min)) * 225;
+  function plot(p) {
+    const compact = window.innerWidth < 600,
+      chart = M.collarChart(p, compact ? 3 : 5),
+      W = compact ? 400 : 760,
+      H = compact ? 320 : 365;
+    const left = compact ? 65 : 90,
+      right = W - 20,
+      top = 30,
+      bottom = H - 65;
+    const X = (v) =>
+        left +
+        ((v - chart.x.min) / (chart.x.max - chart.x.min)) * (right - left),
+      Y = (v) =>
+        bottom -
+        ((v - chart.y.min) / (chart.y.max - chart.y.min)) * (bottom - top);
+    const axisMoney = (n) => {
+      const abs = Math.abs(n),
+        scale = abs >= 1e9 ? 1e9 : abs >= 1e6 ? 1e6 : abs >= 1e3 ? 1e3 : 1,
+        suffix =
+          scale === 1e9 ? "B" : scale === 1e6 ? "M" : scale === 1e3 ? "K" : "";
+      return (
+        (n < 0 ? "-" : "") +
+        "$" +
+        (abs / scale).toLocaleString("en-US", { maximumFractionDigits: 2 }) +
+        suffix
+      );
+    };
+    let grid = "";
+    for (const v of chart.y.ticks) {
+      const y = Y(v);
+      grid +=
+        '<line x1="' +
+        left +
+        '" x2="' +
+        right +
+        '" y1="' +
+        y +
+        '" y2="' +
+        y +
+        '" stroke="#e6dfc8"/><line x1="' +
+        (left - 5) +
+        '" x2="' +
+        left +
+        '" y1="' +
+        y +
+        '" y2="' +
+        y +
+        '" stroke="#536064"/><text class="y-tick" x="' +
+        (left - 10) +
+        '" y="' +
+        (y + 4) +
+        '" text-anchor="end">' +
+        axisMoney(v) +
+        "</text>";
+    }
+    for (const [i, v] of chart.x.ticks.entries()) {
+      const x = X(v);
+      grid +=
+        '<line x1="' +
+        x +
+        '" x2="' +
+        x +
+        '" y1="' +
+        top +
+        '" y2="' +
+        bottom +
+        '" stroke="#eee9d9"/><line x1="' +
+        x +
+        '" x2="' +
+        x +
+        '" y1="' +
+        bottom +
+        '" y2="' +
+        (bottom + 5) +
+        '" stroke="#536064"/><text class="x-tick" x="' +
+        x +
+        '" y="' +
+        (bottom + 22) +
+        '" text-anchor="' +
+        (i === 0
+          ? "start"
+          : i === chart.x.ticks.length - 1
+            ? "end"
+            : "middle") +
+        '">' +
+        "$" +
+        v.toLocaleString("en-US", { maximumFractionDigits: 2 }) +
+        "</text>";
+    }
+    const points = (key) =>
+      chart.points
+        .map((v) => X(v.price).toFixed(2) + "," + Y(v[key]).toFixed(2))
+        .join(" ");
     return (
-      '<div class="card chart-card"><h2>Position value at expiration</h2><svg class="chart" viewBox="0 0 700 300" role="img" aria-label="Protection versus unhedged value at ' +
+      '<div class="card chart-card"><h2>Position value at expiration</h2><svg class="chart payoff-chart" viewBox="0 0 ' +
+      W +
+      " " +
+      H +
+      '" role="img" aria-label="' +
+      esc(p.symbol) +
+      " stock and collar values at " +
       esc(p.expiry) +
-      '"><text x="55" y="20">Value at ' +
+      '"><title>' +
+      esc(p.symbol) +
+      " at expiration " +
       esc(p.expiry) +
-      " (USD)</text>" +
-      ["stock", "value"]
-        .map(
-          (k, i) =>
-            '<polyline fill="none" stroke="' +
-            (i ? "#b58b45" : "#aab4bc") +
-            '" stroke-width="3" points="' +
-            pts.map((v) => X(v.end) + "," + Y(v[k])).join(" ") +
-            '"/>',
-        )
-        .join("") +
-      '<text x="55" y="285">Stock price ' +
-      money(p.S * 0.4) +
-      '</text><text x="450" y="285">' +
-      money(p.S * 1.6) +
-      '</text></svg><p class="muted">Gold: protection including premium. Gray: unhedged stock. No taxes or fees.</p></div>'
+      '</title><g class="chart-grid">' +
+      grid +
+      '</g><path class="x-axis" d="M' +
+      left +
+      " " +
+      bottom +
+      "H" +
+      right +
+      '" fill="none" stroke="#1f2b2f" stroke-width="1.5"/><path class="y-axis" d="M' +
+      left +
+      " " +
+      top +
+      "V" +
+      bottom +
+      '" fill="none" stroke="#1f2b2f" stroke-width="1.5"/><text class="axis-title" text-anchor="middle" x="' +
+      (left + right) / 2 +
+      '" y="' +
+      (H - 12) +
+      '">' +
+      esc(p.symbol) +
+      ' price at expiration (USD)</text><text class="axis-title" text-anchor="middle" transform="translate(16 ' +
+      (top + bottom) / 2 +
+      ') rotate(-90)">Position value (USD)</text><polyline class="stock-line" fill="none" stroke="#8c999e" stroke-width="3" stroke-dasharray="1 7" stroke-linecap="round" points="' +
+      points("stock") +
+      '"/><polyline class="collar-line" fill="none" stroke="#b58b45" stroke-width="3" stroke-linejoin="round" points="' +
+      points("collar") +
+      '"/></svg><div class="legend"><span><i class="sw"></i>Collared position</span><span><i class="sw stock"></i>Unhedged stock (dotted)</span></div><p class="muted">At ' +
+      esc(p.expiry) +
+      ". Collar includes initial net premium; taxes and fees excluded.</p></div>"
     );
   }
   function analysis(p) {
@@ -277,7 +382,7 @@ export function signatureClient() {
         ". Both legs expire " +
         esc(p.expiry) +
         ".</p>" +
-        plot(p, a) +
+        plot(p) +
         table(
           [
             "Stock return",
@@ -711,6 +816,18 @@ export function signatureClient() {
     }
   });
   add();
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      for (const s of states)
+        if (s.p.strategy === "protection") {
+          try {
+            s.root.querySelector(".chart-card").outerHTML = plot(s.p);
+          } catch {}
+        }
+    }, 150);
+  });
   setInterval(refreshToday, 60000);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) refreshToday();

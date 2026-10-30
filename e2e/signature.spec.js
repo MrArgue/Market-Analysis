@@ -149,3 +149,49 @@ test("today replaces valuation input and rolls forward overnight", async ({
   );
   await page.screenshot({ path: "../restored-mobile.png", fullPage: true });
 });
+
+test("chart axes rescale and stock remains dotted on desktop and mobile", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/collar");
+  const chart = page.locator(".payoff-chart");
+  await expect(chart.locator(".x-axis")).toHaveCount(1);
+  await expect(chart.locator(".y-axis")).toHaveCount(1);
+  await expect(chart).toContainText("Position value (USD)");
+  await expect(chart).toContainText("AAPL price at expiration (USD)");
+  await expect(chart.locator(".stock-line")).toHaveAttribute(
+    "stroke-dasharray",
+    "1 7",
+  );
+  await expect(chart.locator(".collar-line")).not.toHaveAttribute(
+    "stroke-dasharray",
+    /.+/,
+  );
+  const yBefore = await chart.locator(".y-tick").allTextContents();
+  await page.locator('[data-key="shares"]').fill("40000");
+  await page.locator('[data-key="shares"]').blur();
+  expect(await chart.locator(".y-tick").allTextContents()).not.toEqual(yBefore);
+  const xBefore = await chart.locator(".x-tick").allTextContents();
+  const calls = page.locator('[data-key="call"]');
+  await calls.selectOption({
+    index: (await calls.locator("option").count()) - 1,
+  });
+  expect(await chart.locator(".x-tick").allTextContents()).not.toEqual(xBefore);
+  await chart.screenshot({ path: "../chart-desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(chart).toHaveAttribute("viewBox", "0 0 400 320");
+  const labels = await chart.locator(".x-tick").evaluateAll((elements) =>
+    elements.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right };
+    }),
+  );
+  expect(labels.every((r, i) => !i || r.left > labels[i - 1].right)).toBe(true);
+  await chart.screenshot({ path: "../chart-mobile.png" });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});

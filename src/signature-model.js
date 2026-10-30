@@ -217,6 +217,45 @@ export function createSignatureModel() {
       shortfall: Math.max(0, p.income - premium),
     };
   }
+  function chartAxis(low, high, count = 5) {
+    const raw = (high - low) / count,
+      power = 10 ** Math.floor(Math.log10(raw)),
+      scaled = raw / power;
+    const step = ([1, 2, 2.5, 5, 10].find((n) => n >= scaled) || 10) * power;
+    const min = Math.floor(low / step) * step,
+      max = Math.ceil(high / step) * step;
+    return {
+      min,
+      max,
+      step,
+      ticks: Array.from(
+        { length: Math.round((max - min) / step) + 1 },
+        (_, i) => Number((min + i * step).toPrecision(12)),
+      ),
+    };
+  }
+  function collarChart(p, count = 5) {
+    const a = protection(p),
+      x = chartAxis(
+        Math.max(0, Math.min(p.S * 0.5, p.put * 0.85)),
+        Math.max(p.S * 1.5, p.call * 1.15),
+        count,
+      );
+    const prices = [...new Set([x.min, p.put, p.S, p.call, x.max])].sort(
+      (a, b) => a - b,
+    );
+    const points = prices.map((price) => ({
+      price,
+      stock: price * p.shares,
+      collar: a.value(price),
+    }));
+    const y = chartAxis(
+      Math.min(0, ...points.map((v) => v.collar)),
+      Math.max(...points.map((v) => Math.max(v.stock, v.collar))) * 1.04,
+      count,
+    );
+    return { x, y, points };
+  }
   function scenarios(p) {
     const returns = [
       0.8, 0.6, 0.4, 0.3, 0.2, 0.1, 0, -0.1, -0.2, -0.3, -0.4, -0.6,
@@ -282,6 +321,7 @@ export function createSignatureModel() {
     protection,
     yieldPlan,
     scenarios,
+    collarChart,
     defaultPosition,
     presetExpiries,
   };
