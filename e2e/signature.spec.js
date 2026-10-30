@@ -1,11 +1,16 @@
 import { test, expect } from "@playwright/test";
-test.use({ viewport: { width: 390, height: 844 } });
+test.use({
+  viewport: { width: 390, height: 844 },
+  timezoneId: "America/Los_Angeles",
+});
 test("mobile positions, strikes, presets and deferred PDF", async ({
   page,
 }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("http://127.0.0.1:8787/collar");
+  await expect(page.locator('[data-key="asOf"]')).toHaveCount(0);
+  await expect(page.locator("#valuation-stamp")).toContainText("As of");
   const first = page.locator("details").first();
   await expect(first.locator(".results")).toContainText("200 contracts");
   await expect(
@@ -26,6 +31,16 @@ test("mobile positions, strikes, presets and deferred PDF", async ({
   const before = await first.locator('[data-key="put"]').inputValue();
   await page.keyboard.press("ArrowRight");
   await expect(first.locator('[data-key="put"]')).not.toHaveValue(before);
+  await expect(first.locator('[data-strike-output="put"]')).toContainText(
+    "% vs. stock",
+  );
+  expect(await slider.evaluate((el) => getComputedStyle(el).accentColor)).toBe(
+    "rgb(173, 136, 76)",
+  );
+  await expect(first).not.toContainText("Snaps to");
+  const mobileInput = await first.locator(".position-inputs").boundingBox(),
+    mobileResults = await first.locator(".results").boundingBox();
+  expect(mobileResults.y).toBeGreaterThan(mobileInput.y + mobileInput.height);
   await first.locator("summary").click();
   await page.getByRole("button", { name: "Add position", exact: true }).click();
   const second = page.locator("details").nth(1);
@@ -61,5 +76,40 @@ test("mobile positions, strikes, presets and deferred PDF", async ({
   await first.locator("summary").click();
   await expect(first.locator('[data-key="put"]')).not.toHaveValue(before);
   await page.setViewportSize({ width: 1440, height: 1000 });
+  const inputs = await first.locator(".position-inputs").boundingBox(),
+    results = await first.locator(".results").boundingBox();
+  expect(inputs.x + inputs.width).toBeLessThan(results.x);
+  expect(Math.abs(inputs.y - results.y)).toBeLessThan(2);
+  expect(
+    await page
+      .locator("html")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+  ).toBe("rgb(247, 248, 250)");
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "../restored-desktop.png" });
   await page.screenshot({ path: "../desktop-proposal.png", fullPage: true });
+});
+
+test("today replaces valuation input and rolls forward overnight", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-10-31T06:59:00Z") });
+  await page.goto("/collar");
+  await expect(page.locator("#valuation-stamp")).toContainText("Oct 30, 2026");
+  await expect(page.locator('[data-key="asOf"]')).toHaveCount(0);
+  const before = await page
+    .locator(".results .table-card")
+    .last()
+    .textContent();
+  await page.clock.runFor(120000);
+  await expect(page.locator("#valuation-stamp")).toContainText("Oct 31, 2026");
+  expect(
+    await page.locator(".results .table-card").last().textContent(),
+  ).not.toBe(before);
+  const call = page.locator('[data-key="call"]');
+  await call.selectOption({ index: 1 });
+  await expect(page.locator('[data-strike-output="call"]')).toContainText(
+    await call.inputValue(),
+  );
+  await page.screenshot({ path: "../restored-mobile.png", fullPage: true });
 });
