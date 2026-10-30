@@ -1,3 +1,5 @@
+import { collarPage } from './collar-page.js';
+import { collarScript } from './collar-script.js';
 import { handleConstituents } from './constituent-data.js';
 import { sectorPage, sectorScript } from './sector-page.js';
 import { handleDiagnostics } from './diagnostics.js';
@@ -19,6 +21,10 @@ export default {
     let response;
     if (pathname === '/health') {
       response = Response.json({ status: 'ok' }, { headers: { 'Cache-Control': 'no-store' } });
+    } else if (pathname === '/collar' || pathname === '/collar/') {
+      response = new Response(collarPage, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'", 'X-Content-Type-Options': 'nosniff' } });
+    } else if (pathname === '/collar.js') {
+      response = new Response(collarScript, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
     } else if (pathname === '/' || pathname === '/sectors') {
       response = new Response(pathname === '/sectors' ? sectorPage : chartPage, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self' https://seia.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff' } });
     } else if (pathname === '/chart.js' || pathname === '/chart-math.js' || pathname === '/sample-data.js' || pathname === '/sectors.js') {
