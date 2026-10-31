@@ -1,0 +1,9 @@
+// Explicitly fictional, credential-free layout preview at /sectors?sample=1.
+import {technicalColumns} from './monitor-math.js';
+const keys=['day','five','mtd','fourWeeks','threeMonths','ytd','year'];
+const returns=i=>Object.fromEntries(keys.map((k,j)=>[k,(i-3)*(j+1)*.23]));
+const technical=i=>Object.fromEntries(technicalColumns.map(([k],j)=>[k,k==='score'?2.4+i*.25:20+(i*7+j*3)%65]));
+const names=[['Industrials','Aerospace & Defense','Machinery'],['Consumer Discretionary','Specialty Retail','Travel Services'],['Information Technology','Software - Application','Semiconductors'],['Communication Services','Entertainment','Telecommunications'],['Health Care','Biotechnology','Medical Devices'],['Financials','Banks','Capital Markets']];
+const groups=names.map(([name,...industries],i)=>({name,returns:returns(i),technical:technical(i),technicalCoverage:Object.fromEntries(technicalColumns.map(([k])=>[k,{included:40,total:43}])),industries:industries.map((name,j)=>({name,returns:returns(i+j),technical:technical(i+j),technicalCoverage:Object.fromEntries(technicalColumns.map(([k])=>[k,{included:20,total:22}])),stocks:[{name:'DEMO · Fictional company',returns:returns(i),technical:Object.fromEntries(technicalColumns.map(([k])=>[k,k==='score'?4:1])),percentile:96.2}]}))}));
+export const monitorSample={state:'ready',universe:'iwb',groups,benchmark:{name:'S&P 500 · sample price returns',returns:returns(4)},overall:{name:'Sample universe · company breadth',returns:returns(4),technical:technical(5)},sourceLabel:'SAMPLE ONLY · Fictional numbers for layout review',methodology:'Fictional layout fixture. Live data has not been loaded. This preview makes no FMP calls.',status:'SAMPLE ONLY · Layout review',coverage:{},issues:[]};
+export const monitorSampleScript='export default '+JSON.stringify(monitorSample)+';';

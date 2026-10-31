@@ -31,7 +31,8 @@ export function parseIwbHoldings(text){
    excluded.push({symbol:sourceSymbol,reason:'Unsupported identifier, classification, currency, location or value'});continue;
   }
   if(seen.has(symbol))throw new Error('Duplicate normalized holdings symbol');seen.add(symbol);
-  members.push({symbol,sourceSymbol,name:get('Name'),sector,marketValue,weight});
+  const holdingPrice=Number(get('Price').replace(/,/g,''));
+  members.push({symbol,sourceSymbol,name:get('Name'),sector,marketValue,weight,holdingPrice:holdingPrice>0?holdingPrice:null});
  }
  if(members.length<800||members.length>1300)throw new Error('Unexpected equity holdings count');
  const weight=members.reduce((n,m)=>n+m.weight,0);if(weight<90||weight>105)throw new Error('Unexpected equity holdings weight');
