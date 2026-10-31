@@ -118,3 +118,34 @@ saved/fresh snapshot races. Existing chart and Signature regression tests remain
 Full live-universe coverage and actual warm-refresh latency require the next
 approved deployment and initial paced build. Samples are not a full coverage
 certificate. Deployment is intentionally not part of the PR #33 approval.
+
+## Live resource-limit recovery
+
+PR #34 was approved and deployed. The initial live build persisted 156 stocks,
+but repeatedly received HTTP 503 / Cloudflare 1102 (Worker exceeded resource
+limits), distinct from an FMP quota/entitlement error. The diagnostic response
+was captured from the public monitor API; no key was read or exposed. Cloudflare
+documents 1102 as a CPU or memory limit failure. The existing local simulation
+did not reproduce Cloudflare's per-invocation resource enforcement.
+
+Recovery splits each stock into one-range downloads, a separate merge, then
+technical preparation. Profiles yield before history work. Quote batches are
+one per request; warm technical batches are six stocks. Large immutable job
+metadata is stored separately, with only profile deltas/checkpoints rewritten.
+Compact close-only benchmark views avoid repeatedly decoding unused OHLCV.
+Existing persisted OHLCV, prepared stocks and partial ranges are retained.
+
+Report assembly first partitions saved records, then reads/calculates one sector
+at a time. Sector/universe technical totals retain eligible-company weighting;
+conflicting CIK classifications are audited/excluded to keep sector company sets
+disjoint. Reports stream already-serialized group JSON, avoiding a combined
+parse/reserialize of the entire stock table in one Worker invocation. Temporary
+partition records and old metadata are reclaimed.
+
+The client retries transient non-JSON 5xx/network responses up to three times,
+then explicitly explains that Refresh data resumes saved progress. An abandoned
+step lease expires after 60 seconds. No CPU/plan/billing/security settings change.
+FMP call scope and the shared 550-per-minute sliding limit are unchanged, though
+the first build now uses more small HTTP steps and may take substantially longer
+than its seven-minute API-pacing lower bound. Live verification is still required
+before claiming that the resource-limit failure is resolved.

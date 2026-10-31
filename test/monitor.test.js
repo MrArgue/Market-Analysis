@@ -47,7 +47,7 @@ function setup(n=3){
  };
  const request=(body,universe='iwb')=>new Request('https://example.com/api/monitor?universe='+universe,body?{method:'POST',headers:{Origin:'https://example.com','Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);
  const invoke=async(body,fetchImpl=fetcher)=>{queries=0;const response=await handleMonitor(request(body),env,fetchImpl,time);assert.ok(queries<50,'D1 operations <50, actual '+queries);return{status:response.status,data:await response.json()};};
- async function run(fetchImpl=fetcher){let r=await invoke({action:'start'},fetchImpl),steps=0;while(r.data.state==='loading'){if(r.data.retryAfter)time+=r.data.retryAfter*1000;r=await invoke({action:'step',id:r.data.id},fetchImpl);assert.ok(++steps<5000);if(r.status>=400)throw new Error(JSON.stringify(r));}return r;}
+ async function run(fetchImpl=fetcher){let r=await invoke({action:'start'},fetchImpl),steps=0;while(r.data.state==='loading'){if(r.data.retryAfter)time+=r.data.retryAfter*1000;r=await invoke({action:'step',id:r.data.id},fetchImpl);assert.ok(++steps<10000);if(r.status>=400)throw new Error(JSON.stringify(r));}return r;}
  return{db,env,calls,history,members,seed,fetcher,request,invoke,run,setTime(t){time=t;},get time(){return time;},close(){db.close();}};
 }
 test('resumable build retains OHLCV, handles omitted index quote, publishes both views and performs no calls on GET',async()=>{
@@ -88,4 +88,16 @@ test('split-basis change performs targeted full repair and never mixes old/new p
 });
 test('unresolved aerospace classification is excluded rather than displayed under Technology',async()=>{
  const s=setup();try{const list=s.members.map(m=>m.symbol==='T0'?{...m,industry:'Aerospace & Defense'}:m);s.seed('monitor-v1:members:iwb:2026-10',{members:list,issues:[]});const report=await s.run();assert.equal(report.data.coverage.processed,2);assert.equal(report.data.groups[0].industries.some(i=>i.name==='Aerospace & Defense'),false);assert.ok(report.data.review.excluded.some(i=>i.symbol==='T0'));}finally{s.close();}
+});
+test('history downloading, merging and technical preparation yield between CPU-heavy operations',async()=>{
+ const s=setup();try{let r=await s.invoke({action:'start'}),steps=0;
+  while(r.data.state==='loading'){const count=s.calls.length;r=await s.invoke({action:'step',id:r.data.id});const historyCalls=s.calls.slice(count).filter(c=>c.path.endsWith('/historical-price-eod/full'));assert.ok(historyCalls.length<=1,'one history range per invocation');assert.ok(++steps<200);}
+  assert.equal(r.data.state,'ready');const job=JSON.parse(s.db.prepare('SELECT payload FROM market_history_cache WHERE cache_key=?').get('monitor-v1:job:iwb').payload);assert.equal(job.members,undefined);assert.equal(job.quotes,undefined);assert.equal(job.total,3);assert.ok(job.staticKey);
+ }finally{s.close();}
+});
+test('an original-format in-progress job migrates without losing its cursor or redownloading completed stocks',async()=>{
+ const s=setup();try{let r=await s.invoke({action:'start'});while(r.data.loaded<1)r=await s.invoke({action:'step',id:r.data.id});
+  const stored=JSON.parse(s.db.prepare('SELECT payload FROM market_history_cache WHERE cache_key=?').get('monitor-v1:job:iwb').payload),metadata=JSON.parse(s.db.prepare('SELECT payload FROM market_history_cache WHERE cache_key=?').get(stored.staticKey).payload),legacy={...stored,...metadata};delete legacy.staticKey;
+  s.seed('monitor-v1:job:iwb',legacy);const before=s.calls.length;r=await s.run();assert.equal(r.data.coverage.processed,3);assert.equal(s.calls.slice(before).filter(c=>c.symbol==='T0'&&c.path.endsWith('/historical-price-eod/full')).length,0);
+ }finally{s.close();}
 });

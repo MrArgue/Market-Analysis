@@ -8,7 +8,7 @@ export const sectorScript=String.raw`
 const $=id=>document.getElementById(id);
 let manualRefresh=false,view='returns',universe='iwb',latest=null,generation=0,sampleData=null;
 const savedReports=new Map();
-const phaseLabels={membership:'Reading monthly holdings',quotes:'Updating quotes',references:'Preparing shared benchmarks',stocks:'Preparing stock data',assemble:'Building sector and industry totals',waiting:'Another refresh is running'};
+const phaseLabels={membership:'Reading monthly holdings',quotes:'Updating quotes',references:'Preparing shared benchmarks',stocks:'Preparing stock data',assemble:'Building sector and industry totals',partition:'Organizing sector data','sector-read':'Reading sector data','sector-calculate':'Calculating sector breadth',publish:'Saving the finished monitor',waiting:'Another refresh is running'};
 const expandedIndustries=new Set();
 const returnColumns=[['day','1-Day'],['five','5-Day'],['mtd','MTD'],['fourWeeks','4-Wk'],['threeMonths','3M'],['ytd','YTD'],['year','1-Year']];
 const technicalColumns=[['score','Avg score'],['strong','Strong'],['weak','Weak'],['overbought','Overbought'],['oversold','Oversold'],['above50','Above 50D'],['above200','Above 200D'],['advancing','Advancing'],['declining','Declining'],['high20','20D highs'],['low20','20D lows'],['high63','63D highs'],['low63','63D lows'],['high252','252D highs'],['low252','252D lows']];
@@ -77,17 +77,28 @@ function render(data){
  $('sector-status').textContent=data.status;
 }
 function endpoint(){return '/api/monitor?universe='+universe;}
+async function requestData(body,current){
+ for(let attempt=0;attempt<3;attempt++){
+  if(current!==generation)return null;
+  let response;try{response=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}catch(error){if(attempt===2)throw new Error('Connection interrupted. Saved progress is retained; press Refresh data to resume.');}
+  if(current!==generation)return null;
+  const type=response?.headers?.get('Content-Type');
+  if(response&&(!type||type.includes('json'))){const data=await response.json();if(!response.ok)throw new Error(data.error||'Monitor unavailable.');return data;}
+  if(response&&response.status<500)throw new Error('Server returned an unexpected response. Saved progress is retained.');
+  if(attempt===2)throw new Error('Server interrupted the refresh. Saved progress is retained; press Refresh data to resume.');
+  $('sector-status').textContent='The server interrupted this step. Retrying saved progress…';await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
+ }
+}
 async function refresh(){
  if(sampleData){render(sampleData);return;}
  manualRefresh=true;const current=++generation,selected=universe,button=$('load-sectors');button.disabled=true;$('sector-status').textContent='Refreshing saved histories and quotes…';
  try{
-  let response=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'start'})}),data=await response.json();
-  if(!response.ok)throw new Error(data.error||'Monitor unavailable.');
+  let data=await requestData({action:'start'},current);if(!data)return;
   while(data.state==='loading'&&current===generation){
    $('sector-status').textContent=(phaseLabels[data.phase]||'Preparing')+': '+data.loaded+' / '+data.total+' securities. Saved results remain visible.'+(data.retryAfter?' Waiting to stay within the data provider request limit.':'');
    if(data.retryAfter)await new Promise(resolve=>setTimeout(resolve,Math.max(1,data.retryAfter)*1000));
    if(current!==generation)return;
-   response=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:data.id?'step':'start',...(data.id?{id:data.id}:{})})});data=await response.json();if(!response.ok)throw new Error(data.error||'Monitor unavailable.');
+   data=await requestData({action:data.id?'step':'start',...(data.id?{id:data.id}:{})},current);if(!data)return;
   }
   if(current===generation&&selected===universe){savedReports.set(universe,data);render(data);}
  }catch(error){if(current===generation)$('sector-status').textContent=error.message+' Any saved results remain visible.';}
