@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {parseIwbHoldings,csvRows,historyWindows,holdingsUrl} from '../src/iwb-universe.js';
 import {handleUniverseCheck} from '../src/universe-check.js';
 import worker from '../src/index.js';
+import {universeCheckPage,universeCheckScript} from '../src/universe-check-page.js';
 import {DatabaseSync} from 'node:sqlite';
 const now=Date.parse('2026-10-31T17:00:00Z');
 function csv(){return 'iShares Russell 1000 ETF\r\nFund Holdings as of,"Oct 29, 2026"\r\nTicker,Name,Sector,Asset Class,Market Value,Weight (%),Location,Currency\r\n'+Array.from({length:1000},(_,i)=>[i===0?'AAPL':i===1?'BRK B':'T'+i,'"Company, '+i+'"','Information Technology','Equity','"1,000.00"','.1','United States','USD'].join(',')).join('\r\n')+'\r\nUSD,Cash,Cash,Cash,20,.01,United States,USD\r\n"Disclaimer\nwith escaped ""quotes""",,,,,,,\r\n';}
@@ -67,9 +68,9 @@ test('stale issuer data halts before account calls',async()=>{
  const s=setup(),fetcher=async url=>String(url)===holdingsUrl?new Response(csv().replace('Oct 29, 2026','Oct 01, 2026')):s.fetcher(url);
  const r=await(await handleUniverseCheck(s.post(),s.env,fetcher,now)).json();assert.equal(r.state,'failed');assert.equal(r.fmpCalls,0);
 });
-test('temporary page is uncached and uses a self-hosted click-to-run script',async()=>{
- const page=worker.fetch(new Request('https://example.com/universe-check'));assert.equal(page.status,200);assert.equal(page.headers.get('Cache-Control'),'no-store');assert.match(await page.text(),/Run access check/);
- const script=await worker.fetch(new Request('https://example.com/universe-check.js')).text();assert.match(script,/button.onclick=/);assert.match(script,/method:'POST'/);assert.equal(await worker.fetch(new Request('https://example.com/universe-check',{method:'HEAD'})).text(),'');
+test('audit fixture remains click-to-run but temporary public access-check routes are retired',async()=>{
+ assert.match(universeCheckPage,/Run access check/);assert.match(universeCheckScript,/button.onclick=/);assert.match(universeCheckScript,/method:'POST'/);
+ for(const path of ['/universe-check','/universe-check.js','/api/universe-check'])assert.equal(worker.fetch(new Request('https://example.com'+path)).status,404);
 });
 test('lease and compare-and-set report publication execute against real SQLite',async()=>{
  const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE market_history_cache(cache_key TEXT PRIMARY KEY,payload TEXT NOT NULL,fetched_at INTEGER NOT NULL)');

@@ -8,7 +8,7 @@ test('both pages expose the same navigation with distinct active links',async()=
  assert.match(chartPage,/<a href="\/" aria-current="page">Tech Chart/);
  assert.match(sectorPage,/<a href="\/sectors" aria-current="page">US Sectors\/Industries/);
  const page=await worker.fetch(new Request('https://example.com/sectors'));
- assert.equal(page.status,200);assert.match(await page.text(),/Load returns/);
+ assert.equal(page.status,200);assert.match(await page.text(),/Refresh data/);
  assert.match(page.headers.get('Content-Security-Policy'),/script-src 'self'/);
 });
 test('table ranks only industry rows per column and renders names as text',async()=>{
@@ -29,7 +29,7 @@ test('client advances bounded load steps and shows progress before rendering',as
  class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
  const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()]));let calls=0;
  const ready={state:'ready',sourceLabel:'Approximate',methodology:'Method',status:'Loaded',groups:[{name:'Sector',returns:{day:1},industries:[]}],benchmark:{name:'S&P 500',returns:{day:2}},coverage:{},issues:[]};
- vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{assert.equal(url,'/api/sectors');assert.equal(options.method,'POST');const body=JSON.parse(options.body);assert.equal(body.action,calls?'step':'start');calls++;return{ok:true,json:async()=>calls<3?{state:'loading',id:'job',loaded:(calls-1)*12,total:24}:ready};}});
+ vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{assert.equal(url,'/api/monitor?universe=iwb');assert.equal(options.method,'POST');const body=JSON.parse(options.body);assert.equal(body.action,calls?'step':'start');calls++;return{ok:true,json:async()=>calls<3?{state:'loading',id:'job',loaded:(calls-1)*12,total:24}:ready};}});
  await nodes['load-sectors'].onclick();assert.equal(calls,3);assert.equal(nodes['sector-status'].textContent,'Loaded');assert.equal(nodes['load-sectors'].disabled,false);assert.equal(nodes['sector-results'].children.length,1);
 });
 test('S&P 500 is first in the left table and column split minimizes row imbalance without splitting sectors',async()=>{
@@ -65,4 +65,17 @@ test('navigating to the page first displays a saved snapshot then requests updat
  const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()])),methods=[];
  const data=status=>({state:'ready',groups:[{name:'Industrials',industries:[]}],sourceLabel:'TEST',methodology:'TEST',status});
  vm.runInNewContext(sectorScript,{window:{},document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{methods.push(options?.method||'GET');return{ok:true,json:async()=>data(options?'Fresh returns':'Saved returns')};}});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(methods,['GET','POST']);assert.equal(nodes['sector-status'].textContent,'Fresh returns');
+});
+test('Returns / Technicals swaps columns locally, preserves expansion and uses a single wide technical table',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method','view-returns','view-technicals'].map(k=>[k,new Node()]));let calls=0;
+ const data={state:'ready',groups:[{name:'Industrials',technical:{score:4.25,strong:75},technicalCoverage:{score:{included:3,total:4}},industries:[{name:'Aerospace & Defense',technical:{score:4},stocks:[{name:'RTX',technical:{score:6,strong:1}}]}]},{name:'Financials',industries:[]}],overall:{name:'Universe breadth',technical:{score:3.5}},sourceLabel:'TEST',methodology:'TEST',status:'TEST'};
+ vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>{calls++;return{ok:true,json:async()=>data};}});await nodes['load-sectors'].onclick();
+ const all=n=>n.children.flatMap(c=>[c,...all(c)]);all(nodes['sector-results']).find(n=>n.className==='industry-toggle').onclick();nodes['view-technicals'].onchange();const elements=all(nodes['sector-results']);assert.equal(nodes['sector-results'].children.length,1);assert.ok(elements.some(n=>n.textContent==='4.25 / 6'));assert.ok(elements.some(n=>n.textContent==='75.0%'));assert.ok(elements.some(n=>n.textContent==='Universe breadth'));assert.ok(elements.some(n=>n.className==='stock'&&n.hidden===false));assert.ok(elements.some(n=>n.textContent==='Yes'));assert.equal(calls,1);nodes['view-returns'].onchange();assert.equal(calls,1);
+});
+test('universe selector fetches its own snapshot and refresh without repainting the old universe',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method','monitor-universe'].map(k=>[k,new Node()])),calls=[];
+ const data={state:'ready',groups:[{name:'Sector',industries:[]}],sourceLabel:'S&P source',methodology:'TEST',status:'TEST'};
+ vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{calls.push([url,options?.method||'GET']);return{ok:true,json:async()=>data};}});nodes['monitor-universe'].value='sp500';await nodes['monitor-universe'].onchange();assert.deepEqual(calls,[['/api/monitor?universe=sp500','GET'],['/api/monitor?universe=sp500','POST']]);assert.equal(nodes['source-label'].textContent,'S&P source');
 });

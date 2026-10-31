@@ -2,8 +2,8 @@ import { signaturePage as collarPage } from './signature-page.js';
 import { signatureModelScript } from './signature-model.js';
 import { signatureScript as collarScript } from './signature-client.js';
 import { handleConstituents } from './constituent-data.js';
-import { handleUniverseCheck } from './universe-check.js';
-import { universeCheckPage, universeCheckScript } from './universe-check-page.js';
+import { handleMonitor } from './monitor-data.js';
+import { monitorSampleScript } from './monitor-sample.js';
 import { sectorPage, sectorScript } from './sector-page.js';
 import { handleDiagnostics } from './diagnostics.js';
 import { chartPage, chartScript } from './chart-page.js';
@@ -14,12 +14,12 @@ import { sampleScript } from './sample-data.js';
 export default {
   fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname;
-    if (['/universe-check','/universe-check.js'].includes(path)&&['GET','HEAD'].includes(request.method))return new Response(request.method==='HEAD'?null:path.endsWith('.js')?universeCheckScript:universeCheckPage,{headers:{'Content-Type':path.endsWith('.js')?'text/javascript; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}});
+    if(path==='/monitor-sample.js'&&['GET','HEAD'].includes(request.method))return new Response(request.method==='HEAD'?null:monitorSampleScript,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
     if (path === '/api/signature-proposal') return new Response('PDF proposals are postponed while the page features are tested.', {status:503,headers:{'Cache-Control':'no-store'}});
     if (path === '/signature-model.js' && ['GET','HEAD'].includes(request.method)) return new Response(request.method === 'HEAD' ? null : signatureModelScript, {headers:{'Content-Type':'text/javascript; charset=utf-8','X-Content-Type-Options':'nosniff'}});
     if (path === '/diagnostics' || path.startsWith('/diagnostics/')) return handleDiagnostics(request, env, ctx);
     if (path === '/api/sectors') return handleConstituents(request, env);
-    if (path === '/api/universe-check') return handleUniverseCheck(request, env);
+    if (path === '/api/monitor') return handleMonitor(request, env);
     if (path === '/api/chart') return handleMarket(request, env, ctx);
     const { pathname } = new URL(request.url);
     if (request.method !== 'GET' && request.method !== 'HEAD') {
