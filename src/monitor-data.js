@@ -4,6 +4,8 @@ import {validDate} from './technical.js';
 import {sectorEtfs} from './sectors.js';
 import {canonicalSector,sectorProxy,prepareStock,stockRecord,liveTechnicals,aggregateMonitor,companyId} from './monitor-math.js';
 const prefix='monitor-v1:',references=['^GSPC',...Object.values(sectorEtfs)],minute=60000;
+// Sized for the user-confirmed Workers Paid plan. Provider pacing is separate.
+const workload={coldStocks:4,warmStocks:24,quoteBatches:4,partitionChunks:4,sectorChunks:24,leaseMs:300000};
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 class Pause extends Error{constructor(seconds){super('Refresh paused for provider pacing');this.seconds=seconds;}}
 export function packHistory(rows){return rows.map(r=>[r.date,r.open??null,r.high??null,r.low??null,r.close,r.volume??null]);}
@@ -44,7 +46,7 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
  async function persistJob(){if(!job.staticKey)return write(jobKey,job);const{members,quotes,symbols,...small}=job;return write(jobKey,small);}
  try{
   const report=await read(manifestKey,minute);if(report)return await saved();
-  locked=!!await env.DB.prepare('INSERT INTO market_history_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at WHERE market_history_cache.fetched_at<=? RETURNING cache_key').bind(leaseKey,token,now+60000,now).first();
+  locked=!!await env.DB.prepare('INSERT INTO market_history_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at WHERE market_history_cache.fetched_at<=? RETURNING cache_key').bind(leaseKey,token,now+workload.leaseMs,now).first();
   if(!locked){job=await read(jobKey);return await progress(2);}
   job=await read(jobKey);
   if(input.action==='step'&&(!job||input.id!==job.id))return reply({error:'Refresh session changed. Start again.'},409);
@@ -79,16 +81,16 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
    store||={rows:[],identity};
    if(store.pending?.until!==job.asOf){const last=store.rows.at(-1)?.[0];store.pending={until:job.asOf,cursor:0,rows:[],ranges:last?[{from:new Date(Date.parse(last+'T12:00:00Z')-10*86400000).toISOString().slice(0,10),to:job.asOf}]:historyWindows(job.asOf)};}
    const pending=store.pending;
-   // One provider range per invocation, then yield. Merging and calculating
-   // happen in separate requests so free-plan CPU bursts do not accumulate.
-   if(pending.cursor<pending.ranges.length){const range=pending.ranges[pending.cursor],raw=cleanHistory(await provider('historical-price-eod/full',{symbol,...range}),range);pending.rows.push(...packHistory(raw));pending.cursor++;await write(key,store);throw new Pause(0);}
+   // At most three <=five-year ranges per stock. Persist each before continuing
+   // so a provider pause or interrupted response can reuse completed ranges.
+   while(pending.cursor<pending.ranges.length){const range=pending.ranges[pending.cursor],raw=cleanHistory(await provider('historical-price-eod/full',{symbol,...range}),range);pending.rows.push(...packHistory(raw));pending.cursor++;await write(key,store);}
    const old=new Map(store.rows.map(r=>[r[0],r])),changed=pending.rows.some(r=>old.has(r[0])&&Math.abs(r[4]/old.get(r[0])[4]-1)>.01);
    if(changed&&store.rows.length&&pending.ranges.length===1){store.pending={until:job.asOf,cursor:0,rows:[],ranges:historyWindows(job.asOf)};store.rows=[];await write(key,store);throw new Pause(1);}
-   const merged=new Map([...store.rows,...pending.rows].map(r=>[r[0],r]));store.rows=[...merged.values()].sort((a,b)=>a[0].localeCompare(b[0]));store.until=job.asOf;delete store.pending;await write(key,store);throw new Pause(0);
+   const merged=new Map([...store.rows,...pending.rows].map(r=>[r[0],r]));store.rows=[...merged.values()].sort((a,b)=>a[0].localeCompare(b[0]));store.until=job.asOf;delete store.pending;await write(key,store);return store.rows.map(r=>({date:r[0],close:r[4],volume:r[5]}));
   }
   async function referenceClose(symbol){
    const key=prefix+'reference-close:'+symbol,cached=await read(key);if(cached?.until===job.asOf)return cached.rows.map(r=>({date:r[0],close:r[1]}));
-   const full=await read(prefix+'history:'+symbol);if(!full?.rows)throw new Error('Benchmark history unavailable');await write(key,{until:job.asOf,rows:full.rows.map(r=>[r[0],r[4]])});throw new Pause(0);
+   const full=await read(prefix+'history:'+symbol);if(!full?.rows)throw new Error('Benchmark history unavailable');const rows=full.rows.map(r=>[r[0],r[4]]);await write(key,{until:job.asOf,rows});return rows.map(r=>({date:r[0],close:r[1]}));
   }
   if(job.phase==='membership'){
    let membership=await read(prefix+'members:'+universe+':'+month);
@@ -105,7 +107,7 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
    }else{job.holdingsAsOf=membership.holdingsAsOf;job.issues=membership.issues||[];membership=membership.members;}
    job.members=membership;job.symbols=[...new Set([...membership.map(m=>m.symbol),...references])];job.phase='quotes';
   }else if(job.phase==='quotes'){
-   for(let batch=0;batch<1&&job.quoteCursor<job.symbols.length;batch++){
+   for(let batch=0;batch<workload.quoteBatches&&job.quoteCursor<job.symbols.length;batch++){
     const symbols=job.symbols.slice(job.quoteCursor,job.quoteCursor+40),raw=await provider('batch-quote',{symbols:symbols.join(',')});
     for(const q of raw)if(symbols.includes(q.symbol)&&q.price>0&&q.previousClose>0&&Number.isFinite(q.timestamp)&&q.timestamp*1000<=now+60000)job.quotes[q.symbol]={symbol:q.symbol,price:q.price,previousClose:q.previousClose,marketCap:q.marketCap??null,volume:q.volume??null,timestamp:q.timestamp};job.quoteCursor+=symbols.length;
    }
@@ -117,13 +119,14 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
   }else if(job.phase==='references'){
    const symbol=references[job.refCursor],rows=await history(symbol);if(symbol==='^GSPC'&&(rows.length<252||Date.parse(job.asOf)-Date.parse(rows.at(-1)?.date)>7*86400000))throw new Error('Benchmark history unavailable or stale');job.refCursor++;if(job.refCursor===references.length)job.phase='stocks';
   }else if(job.phase==='stocks'){
-   for(let processed=0;processed<6&&job.cursor<job.members.length;processed++){
+   let coldCount=0;
+   for(let processed=0;processed<workload.warmStocks&&job.cursor<job.members.length;processed++){
     const member=job.members[job.cursor],q=job.quotes[member.symbol],stateKey=prefix+'prepared:'+member.symbol+':'+member.sector;let prepared=await read(stateKey),cold=prepared?.asOf!==job.asOf||prepared?.identity!==companyId(member)||!member.industry||!member.cik||(q&&prepared?.state.previousClose&&Math.abs(q.previousClose/prepared.state.previousClose-1)>.01);
-    if(cold&&processed)break;
+    if(cold)coldCount++;
     try{
      if(!member.industry||!member.cik){
       const rows=await provider('profile',{symbol:member.symbol}),p=rows.find(p=>p.symbol===member.symbol);
-      if(!p?.industry||!p?.cik||canonicalSector(p.sector)!==member.sector)throw new Error('Classification or company identity unresolved');member.industry=p.industry;member.cik=p.cik;(job.memberUpdates||={})[member.symbol]={industry:p.industry,cik:p.cik};throw new Pause(0);
+      if(!p?.industry||!p?.cik||canonicalSector(p.sector)!==member.sector)throw new Error('Classification or company identity unresolved');member.industry=p.industry;member.cik=p.cik;(job.memberUpdates||={})[member.symbol]={industry:p.industry,cik:p.cik};
      }
      if(member.industry==='Aerospace & Defense'&&member.sector!=='Industrials')throw new Error('Classification unresolved');
      if(cold){
@@ -136,13 +139,13 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
     }catch(error){if(error instanceof Pause)throw error;job.issues.push({symbol:member.symbol,reason:/^FMP /.test(error.message)?error.message:'History, classification or company identity unavailable'});job.consecutiveFailures=/^FMP /.test(error.message)?(job.consecutiveFailures||0)+1:0;if(job.consecutiveFailures>=5)throw new Error('Repeated provider failures; saved snapshot retained');}
     job.cursor++;
     if(job.buffer.length>=16||job.cursor===job.members.length){const key=prefix+'records:'+job.id+':'+job.chunks.length;await write(key,job.buffer);job.chunks.push(key);job.buffer=[];}
-    if(cold)break;
+    if(coldCount>=workload.coldStocks)break;
    }
    if(job.cursor===job.members.length){job.phase='partition';job.partitionCursor=0;job.sectorChunks={};}
   }else if(job.phase==='partition'||job.phase==='assemble'){
    // Accept an in-progress job from the original deployment without rebuilding.
    job.partitionCursor??=0;job.sectorChunks||={};job.records=[];job.phase='partition';
-   if(job.partitionCursor<job.chunks.length){
+   for(let part=0;part<workload.partitionChunks&&job.partitionCursor<job.chunks.length;part++){
     const records=await read(job.chunks[job.partitionCursor]),parts={};for(const r of records)(parts[r.sector]||=[]).push(r);
     for(const[sector,part]of Object.entries(parts)){const key=prefix+'partition:'+job.id+':'+sector+':'+job.partitionCursor;await write(key,part);(job.sectorChunks[sector]||=[]).push(key);}job.partitionCursor++;
    }
@@ -154,7 +157,7 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
    }
   }else if(job.phase==='sector-read'){
    const sector=job.sectorNames[job.sectorCursor],chunks=job.sectorChunks[sector]||[];
-   for(let i=0;i<12&&job.sectorReadCursor<chunks.length;i++){job.sectorRecords.push(...await read(chunks[job.sectorReadCursor]));job.sectorReadCursor++;}
+   for(let i=0;i<workload.sectorChunks&&job.sectorReadCursor<chunks.length;i++){job.sectorRecords.push(...await read(chunks[job.sectorReadCursor]));job.sectorReadCursor++;}
    if(job.sectorReadCursor===chunks.length)job.phase='sector-calculate';
   }else if(job.phase==='sector-calculate'){
    const sector=job.sectorNames[job.sectorCursor],members=job.members.filter(m=>m.sector===sector),records=job.sectorRecords.filter(r=>!job.conflictedCompanies.includes(companyId(r))),benchmark=await referenceClose('^GSPC');

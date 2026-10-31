@@ -149,3 +149,24 @@ FMP call scope and the shared 550-per-minute sliding limit are unchanged, though
 the first build now uses more small HTTP steps and may take substantially longer
 than its seven-minute API-pacing lower bound. Live verification is still required
 before claiming that the resource-limit failure is resolved.
+
+## Workers Paid tuning
+
+The user confirmed the failures were CPU limit errors on Workers Free, then
+upgraded to Workers Paid and requested continuation using the new capacity.
+The existing saved build resumed past its previous checkpoint without a CPU
+error in the initial paid-plan verification. Full completion remains the gate.
+
+Bounded paid-plan batches now process up to four cold stocks (up to twelve
+history ranges plus profiles), or 24 prepared stocks, per request. Profiles,
+range downloads, merges and state preparation can share a request again; each
+range is still persisted before moving on. Quotes use four batches per request;
+partitioning handles four chunks and sector reads 24 chunks per request. Cold
+stock work is sequential, keeping outgoing connection use bounded. Work leases
+cover up to five minutes of wall time to accommodate worst-case network waits.
+
+The same 550-call sliding budget, retry checkpoints, immutable metadata, compact
+reference closes, sector-by-sector calculation and streamed report delivery are
+retained. No subscription/billing/CPU-limit setting or secret is changed by code.
+Tests bound paid batches below 150 D1 operations and twelve stock-history calls
+per invocation, while retaining full load, migration, rate-limit and parity tests.
