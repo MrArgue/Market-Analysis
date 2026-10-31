@@ -101,3 +101,13 @@ test('an original-format in-progress job migrates without losing its cursor or r
   s.seed('monitor-v1:job:iwb',legacy);const before=s.calls.length;r=await s.run();assert.equal(r.data.coverage.processed,3);assert.equal(s.calls.slice(before).filter(c=>c.symbol==='T0'&&c.path.endsWith('/historical-price-eod/full')).length,0);
  }finally{s.close();}
 });
+test('housekeeping failure cannot hide a published report or block a later refresh',async()=>{
+ const s=setup(),original=s.env.DB.prepare;try{
+  s.env.DB.prepare=sql=>{if(sql.startsWith('DELETE'))throw new Error('private-secret');return original(sql);};
+  const report=await s.run();assert.equal(report.data.state,'ready');assert.equal((await s.invoke()).data.state,'ready');assert.ok(!JSON.stringify(report).includes('private-secret'));
+  s.setTime(s.time+61000);assert.equal((await s.run()).data.state,'ready');
+ }finally{s.close();}
+});
+test('prefix cleanup is indexed and does not delete neighboring keys',async()=>{
+ const s=setup();try{s.seed('monitor-v1:records:unrelated:0',{keep:true});await s.run();assert.ok(s.db.prepare('SELECT payload FROM market_history_cache WHERE cache_key=?').get('monitor-v1:records:unrelated:0'));assert.equal(s.db.prepare("SELECT count(*) AS n FROM market_history_cache WHERE cache_key LIKE 'monitor-v1:partition:%'").get().n,0);}finally{s.close();}
+});

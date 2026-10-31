@@ -25,6 +25,13 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
  const today=exchangeDate(now),month=today.slice(0,7),jobKey=prefix+'job:'+universe,manifestKey=prefix+'report:'+universe;
  async function read(key,ttl=Infinity){const row=await env.DB.prepare('SELECT payload,fetched_at FROM market_history_cache WHERE cache_key=?').bind(key).first();if(!row||now-row.fetched_at>=ttl)return null;try{return JSON.parse(row.payload);}catch{return null;}}
  async function write(key,value){const payload=JSON.stringify(value);if(payload.length>1800000)throw new Error('Storage partition too large');await env.DB.prepare('INSERT INTO market_history_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at').bind(key,payload,now).run();}
+ async function removePrefix(pattern){
+  // LIKE does not reliably use the primary-key index. Bound the exact prefix
+  // range instead of scanning a table containing large historical payloads.
+  const start=pattern.endsWith('%')?pattern.slice(0,-1):pattern,end=start.slice(0,-1)+String.fromCharCode(start.charCodeAt(start.length-1)+1);
+  await env.DB.prepare('DELETE FROM market_history_cache WHERE cache_key>=? AND cache_key<?').bind(start,end).run();
+ }
+ async function housekeeping(action){try{await action();}catch{console.warn('Monitor temporary cache cleanup deferred');}}
  async function saved(){
   const m=await read(manifestKey);if(!m)return reply({state:'not-loaded',universe});
   const {groups,...metadata}=m;metadata.status+=' · Saved snapshot; refreshing on this visit.';
@@ -51,8 +58,8 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
   job=await read(jobKey);
   if(input.action==='step'&&(!job||input.id!==job.id))return reply({error:'Refresh session changed. Start again.'},409);
   if(!job||job.day!==today||job.phase==='done'||job.phase==='failed'){
-   if(job?.id)await env.DB.prepare('DELETE FROM market_history_cache WHERE cache_key LIKE ?').bind(prefix+'records:'+job.id+':%').run();
-   if(job?.staticKey)await env.DB.prepare('DELETE FROM market_history_cache WHERE cache_key=?').bind(job.staticKey).run();
+   if(job?.id)await housekeeping(()=>removePrefix(prefix+'records:'+job.id+':%'));
+   if(job?.staticKey)await housekeeping(()=>env.DB.prepare('DELETE FROM market_history_cache WHERE cache_key=?').bind(job.staticKey).run());
    job={id:crypto.randomUUID(),universe,day:today,month,phase:'membership',cursor:0,quoteCursor:0,refCursor:0,members:[],quotes:{},issues:[],chunks:[],buffer:[],createdAt:now};await write(jobKey,job);
   }
   if(job.staticKey){
@@ -173,15 +180,19 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
    if(universe==='iwb')result.sourceLabel+=' · Holdings as of '+job.holdingsAsOf;
    await write(prefix+'members:'+universe+':'+month,{members:job.members,holdingsAsOf:job.holdingsAsOf||null,issues:job.issues.filter(i=>!job.members.some(m=>m.symbol===i.symbol))});
    const previous=await read(manifestKey);await write(manifestKey,{...result,groupPrefix:prefix+'group:'+job.id+':%',previousGroupPrefix:previous?.groupPrefix||null,holdingsAsOf:job.holdingsAsOf||null,preparedAt:new Date(now).toISOString()});
-   if(previous?.previousGroupPrefix)await env.DB.prepare('DELETE FROM market_history_cache WHERE cache_key LIKE ?').bind(previous.previousGroupPrefix).run();
-   for(const kind of ['records','partition'])await env.DB.prepare('DELETE FROM market_history_cache WHERE cache_key LIKE ?').bind(prefix+kind+':'+job.id+':%').run();
-   job.phase='done';await persistJob();return await saved();
+   // Publish success before optional housekeeping. A cleanup failure must not
+   // mark a successfully saved report as failed or block the next refresh.
+   job.phase='done';await persistJob();
+   if(previous?.previousGroupPrefix)await housekeeping(()=>removePrefix(previous.previousGroupPrefix));
+   for(const kind of ['records','partition'])await housekeeping(()=>removePrefix(prefix+kind+':'+job.id+':%'));
+   return await saved();
   }
   await persistJob();return await progress();
  }catch(error){
   if(error instanceof Pause){if(job)await persistJob();return await progress(error.seconds);}
-  if(job){job.phase='failed';try{await persistJob();}catch{}}
-  return reply({error:/^(FMP |Benchmark |Membership |Issuer |Repeated )/.test(error.message||'')?error.message:'Monitor could not refresh. Saved results remain available.'},502);
+  const stage=job?.phase||'cache',message=error.message||'',code=/too large|TOOBIG/i.test(message)?'cache_partition_limit':/database.*full|SQLITE_FULL|quota/i.test(message)?'database_capacity':/D1_|SQLITE_/i.test(message)?'database_operation':error.name==='TypeError'?'cached_data_shape':'refresh_interrupted';
+  if(job){job.failure={stage,code};job.phase='failed';try{await persistJob();}catch{}}
+  return reply({error:/^(FMP |Benchmark |Membership |Issuer |Repeated )/.test(message)?message:'Monitor could not refresh. Saved results remain available.',stage,code},502);
  }finally{
   if(locked)try{await env.DB.prepare('UPDATE market_history_cache SET fetched_at=0 WHERE cache_key=? AND payload=?').bind(leaseKey,token).run();}catch{}
  }
