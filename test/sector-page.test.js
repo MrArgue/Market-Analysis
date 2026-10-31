@@ -79,3 +79,14 @@ test('universe selector fetches its own snapshot and refresh without repainting 
  const data={state:'ready',groups:[{name:'Sector',industries:[]}],sourceLabel:'S&P source',methodology:'TEST',status:'TEST'};
  vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{calls.push([url,options?.method||'GET']);return{ok:true,json:async()=>data};}});nodes['monitor-universe'].value='sp500';await nodes['monitor-universe'].onchange();assert.deepEqual(calls,[['/api/monitor?universe=sp500','GET'],['/api/monitor?universe=sp500','POST']]);assert.equal(nodes['source-label'].textContent,'S&P source');
 });
+test('a transient HTML server failure retries the same saved action without parsing HTML as JSON',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()]));let calls=0;
+ const ready={state:'ready',groups:[{name:'Sector',industries:[]}],sourceLabel:'TEST',methodology:'TEST',status:'Recovered'};
+ vm.runInNewContext(sectorScript,{setTimeout:callback=>callback(),document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>{calls++;return calls===1?{status:503,headers:{get:()=> 'text/html'},json:async()=>{throw new Error('Must not parse HTML');}}:{ok:true,headers:{get:()=> 'application/json'},json:async()=>ready};}});await nodes['load-sectors'].onclick();assert.equal(calls,2);assert.equal(nodes['sector-status'].textContent,'Recovered');
+});
+test('repeated HTML failures stop after bounded retries and explain how to resume',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()]));let calls=0;
+ vm.runInNewContext(sectorScript,{setTimeout:callback=>callback(),document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>{calls++;return{status:503,headers:{get:()=> 'text/html'}};}});await nodes['load-sectors'].onclick();assert.equal(calls,3);assert.match(nodes['sector-status'].textContent,/Saved progress is retained/);assert.equal(nodes['load-sectors'].disabled,false);
+});
