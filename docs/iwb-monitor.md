@@ -170,3 +170,24 @@ reference closes, sector-by-sector calculation and streamed report delivery are
 retained. No subscription/billing/CPU-limit setting or secret is changed by code.
 Tests bound paid batches below 150 D1 operations and twelve stock-history calls
 per invocation, while retaining full load, migration, rate-limit and parity tests.
+
+## First paid live result and post-publication recovery
+
+The IWB report was published and read back successfully on October 31: 938 stock
+rows, 11 sectors, 127 industries, about 98.14% of the issuer's displayed fund
+weight. Scores were available for 906 companies and percentiles for 887, with
+separate per-indicator coverage. AAPL's live score (6), percentile (78.8132218%),
+all seven return periods and 20/63/252-session closing-high/low flags matched an
+independently requested Tech Chart result. No paid-plan CPU error was observed.
+
+The final response and subsequent refresh still returned a generic error after
+the report had already been saved. Post-save/startup housekeeping used broad
+LIKE deletes over the large history-cache table. Cleanup now uses primary-key
+prefix ranges and is non-blocking after report publication and at refresh start.
+Job success is recorded before optional cleanup. This prevents housekeeping
+failures from hiding a saved report or blocking the next refresh. Failures before
+publication expose only fixed stage/category codes, never raw database/provider
+errors or credentials. Tests inject deletion failures and verify successful
+publication, subsequent refresh, and preservation of neighboring keys.
+
+Full live refresh verification remains required for the cleanup change.
