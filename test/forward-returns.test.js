@@ -31,6 +31,15 @@ test('missing sector OHLC or stock sessions never silently shorten outcomes',()=
 test('block intervals are deterministic, bounded for constant returns and suppress sparse evidence',()=>{
  const outcomes=Array.from({length:200},(_,index)=>({index,excess:3}));const a=blockInterval(outcomes,0,199,21);assert.equal(a.low,3);assert.equal(a.high,3);assert.deepEqual(a,blockInterval(outcomes,0,199,21));assert.equal(blockInterval(outcomes.slice(0,5),0,199,21).low,null);
 });
+test('absolute basis switches returns, hit rates and intervals without changing the matched sample or states',()=>{
+ const d=fixture();d.research.sector=d.rows.map((r,i)=>({date:r.date,open:50+i*2,close:52+i*2}));
+ const relative=forwardResearch(d,{horizon:21,mode:'days'}),absolute=forwardResearch(d,{horizon:21,mode:'days',basis:'absolute'});
+ assert.equal(relative.current,absolute.current);assert.equal(relative.cells[2].n,absolute.cells[2].n);assert.equal(relative.cells[2].episodes,absolute.cells[2].episodes);
+ assert.ok(relative.cells[2].median<0);assert.ok(absolute.cells[2].median>0);assert.equal(absolute.cells[2].winRate,100);assert.equal(relative.cells[2].winRate,0);
+ assert.ok(absolute.cells[2].interval.low>0);assert.ok(relative.cells[2].interval.high<0);
+ assert.equal(absolute.cells[2].median,absolute.cells[2].stockMedian);assert.equal(absolute.cells[2].relativeMedian,relative.cells[2].median);
+ assert.throws(()=>forwardResearch(d,{basis:'invalid'}));
+});
 test('research is collapsed and located between the chart and components, with independent modules',async()=>{
  assert.ok(chartPage.indexOf('id="forward-panel"')>chartPage.indexOf('id="chart"'));assert.ok(chartPage.indexOf('id="forward-panel"')<chartPage.indexOf('Six Technical Components'));assert.doesNotMatch(chartPage,/<details[^>]*id="forward-panel"[^>]* open/);assert.match(chartPage,/src="\/forward.js"/);
  for(const path of ['/forward.js','/forward-math.js'])assert.equal((await worker.fetch(new Request('https://example.com'+path))).status,200);
@@ -38,9 +47,12 @@ test('research is collapsed and located between the chart and components, with i
 });
 test('panel follows range changes one-way and controls never fetch or mutate chart inputs',()=>{
  class Element{constructor(){this.children=[];this.dataset={};this.value='';this.textContent='';this.open=false;}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}setAttribute(k,v){this[k]=v;}}
- const ids=['forward-panel','forward-current','forward-scope','forward-horizon','forward-mode','forward-cells','forward-low','forward-high','forward-status','forward-baseline','forward-detail'];const nodes=Object.fromEntries(ids.map(id=>[id,new Element()]));nodes['forward-scope'].value='visible';nodes['forward-horizon'].value='21';nodes['forward-mode'].value='episodes';let listener;
+ const ids=['forward-panel','forward-current','forward-scope','forward-horizon','forward-mode','forward-cells','forward-low','forward-high','forward-status','forward-baseline','forward-detail','forward-basis','forward-caption'];const nodes=Object.fromEntries(ids.map(id=>[id,new Element()]));nodes['forward-scope'].value='visible';nodes['forward-horizon'].value='21';nodes['forward-mode'].value='episodes';nodes['forward-basis'].value='relative';let listener;
  vm.runInNewContext(forwardScript.replace(/^\n?import[^\n]+\n/,''),{researchState,forwardResearch,document:{getElementById:id=>nodes[id],createElement:()=>new Element()},window:{addEventListener:(name,fn)=>{assert.equal(name,'chart-range');listener=fn;}}});
  const data=fixture(),original=JSON.stringify(data);listener({detail:{data,from:data.rows[0].date,to:data.rows[30].date}});assert.match(nodes['forward-current'].textContent,/Strong \/ Overbought/);assert.equal(nodes['forward-cells'].children.length,0);
  nodes['forward-panel'].open=true;nodes['forward-panel'].ontoggle();assert.equal(nodes['forward-cells'].children.length,3);assert.equal(nodes['forward-cells'].children[0].children[3].children[0].dataset.current,'true');
  nodes['forward-scope'].value='full';nodes['forward-scope'].onchange();assert.equal(JSON.stringify(data),original);
+ const relativeText=nodes['forward-cells'].children[0].children[3].children[0].children[0].textContent;
+ assert.match(relativeText,/pp/);nodes['forward-basis'].value='absolute';nodes['forward-basis'].onchange();
+ assert.match(nodes['forward-caption'].textContent,/Absolute/);assert.match(nodes['forward-detail'].textContent,/Positive-return rate/);assert.match(nodes['forward-cells'].children[0].children[3].children[0].children[0].textContent,/%/);assert.equal(JSON.stringify(data),original);
 });
