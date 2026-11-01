@@ -66,12 +66,12 @@ test('navigating to the page first displays a saved snapshot then requests updat
  const data=status=>({state:'ready',groups:[{name:'Industrials',industries:[]}],sourceLabel:'TEST',methodology:'TEST',status});
  vm.runInNewContext(sectorScript,{window:{},document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{methods.push(options?.method||'GET');return{ok:true,json:async()=>data(options?'Fresh returns':'Saved returns')};}});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(methods,['GET','POST']);assert.equal(nodes['sector-status'].textContent,'Fresh returns');
 });
-test('Returns / Technicals swaps columns locally, preserves expansion and uses a single wide technical table',async()=>{
+test('Returns / Technicals swaps columns locally, preserves expansion and uses two compact technical tables',async()=>{
  class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
  const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method','view-returns','view-technicals'].map(k=>[k,new Node()]));let calls=0;
  const data={state:'ready',groups:[{name:'Industrials',technical:{score:4.25,strong:75},technicalCoverage:{score:{included:3,total:4}},industries:[{name:'Aerospace & Defense',technical:{score:4},stocks:[{name:'RTX',technical:{score:6,strong:1}}]}]},{name:'Financials',industries:[]}],overall:{name:'Universe breadth',technical:{score:3.5}},sourceLabel:'TEST',methodology:'TEST',status:'TEST'};
  vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>{calls++;return{ok:true,json:async()=>data};}});await nodes['load-sectors'].onclick();
- const all=n=>n.children.flatMap(c=>[c,...all(c)]);all(nodes['sector-results']).find(n=>n.className==='industry-toggle').onclick();nodes['view-technicals'].onchange();const elements=all(nodes['sector-results']);assert.equal(nodes['sector-results'].children.length,1);assert.ok(elements.some(n=>n.textContent==='4.25 / 6'));assert.ok(elements.some(n=>n.textContent==='75.0%'));assert.ok(elements.some(n=>n.textContent==='Universe breadth'));assert.ok(elements.some(n=>n.className==='stock'&&n.hidden===false));assert.ok(elements.some(n=>n.textContent==='Yes'));assert.equal(calls,1);nodes['view-returns'].onchange();assert.equal(calls,1);
+ const all=n=>n.children.flatMap(c=>[c,...all(c)]);all(nodes['sector-results']).find(n=>n.className==='industry-toggle').onclick();nodes['view-technicals'].onchange();const elements=all(nodes['sector-results']);assert.equal(nodes['sector-results'].children.length,2);assert.ok(elements.some(n=>n.textContent==='4.25'));assert.ok(!elements.some(n=>String(n.textContent).includes(' / 6')));assert.ok(elements.some(n=>n.textContent==='Universe breadth'));assert.ok(elements.some(n=>n.className==='stock'&&n.hidden===false));assert.ok(elements.some(n=>n.textContent==='-/-'));assert.equal(calls,1);nodes['view-returns'].onchange();assert.equal(calls,1);
 });
 test('universe selector fetches its own snapshot and refresh without repainting the old universe',async()=>{
  class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
@@ -99,4 +99,20 @@ test('review buckets are unranked and missing stock values render a dash',async(
  const data={groups:[{name:'Industrials',industries:[...Array.from({length:5},(_,i)=>({name:'Industry '+i,returns:returns(i)})),{name:'Industry under review',rankable:false,returns:returns(1000),stocks:[{name:'Young stock',returns:{day:1,year:null}}]}]}],status:'Ready'};
  vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>({ok:true,json:async()=>data})});await nodes['load-sectors'].onclick();
  const all=n=>n.children.flatMap(c=>[c,...all(c)]),elements=all(nodes['sector-results']),review=elements.find(n=>n.className==='industry'&&n.children[0]?.textContent==='Industry under review');assert.ok(review);assert.ok(review.children.slice(1).every(n=>!n.className));assert.ok(elements.some(n=>n.textContent==='-'));assert.equal(elements.filter(n=>n.className==='return-best').length,7);
+});
+
+
+test('sector collapse hides industries and stocks, survives mode changes, and preserves industry expansion without fetching',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method','view-returns','view-technicals'].map(k=>[k,new Node()]));let calls=0;
+ const data={groups:[{name:'Industrials',technical:{score:4,percentile:64.3,above50:75,above200:null,advancing:60,declining:30,high20:10,low20:5},industries:[{name:'Machinery',stocks:[{name:'TEST',percentile:91.2,technical:{score:6,above50:1,above200:0,advancing:0,declining:1}}]}]},{name:'Financials',industries:[]}],status:'Ready'};
+ vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>{calls++;return{ok:true,json:async()=>data};}});await nodes['load-sectors'].onclick();
+ const all=n=>n.children.flatMap(c=>[c,...all(c)]),elements=()=>all(nodes['sector-results']);
+ elements().find(n=>n.className==='industry-toggle').onclick();let toggle=elements().find(n=>n.className==='sector-toggle');assert.equal(toggle['aria-expanded'],'true');toggle.onclick();assert.equal(toggle['aria-expanded'],'false');assert.equal(elements().find(n=>n.className==='industry-block').hidden,true);
+ nodes['view-technicals'].onchange();assert.equal(elements().find(n=>n.className==='industry-block').hidden,true);toggle=elements().find(n=>n.className==='sector-toggle');toggle.onclick();assert.equal(elements().find(n=>n.className==='industry-block').hidden,false);assert.equal(elements().find(n=>n.className==='stock').hidden,false);
+ const text=elements().map(n=>n.textContent);for(const expected of ['64.3%','75%/-','60%/30%','10%/5%','91.2%','100%/0%','0%/100%'])assert.ok(text.includes(expected),expected);assert.equal(calls,1);
+});
+
+test('desktop headers stick to the page while narrow screens retain bounded horizontal scrolling',()=>{
+ assert.match(sectorPage,/position:sticky;top:0;z-index:5/);assert.match(sectorPage,/\.return-scroll\{overflow:visible\}/);assert.match(sectorPage,/overflow:auto;max-height:75vh/);assert.doesNotMatch(sectorPage,/\.technical-grid\{grid-template-columns:1fr\}/);
 });

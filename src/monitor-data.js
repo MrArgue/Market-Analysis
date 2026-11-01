@@ -57,10 +57,10 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
   if(!locked){job=await read(jobKey);return await progress(2);}
   job=await read(jobKey);
   if(input.action==='step'&&(!job||input.id!==job.id))return reply({error:'Refresh session changed. Start again.'},409);
-  if(!job||job.classificationPolicy!==2||job.day!==today||job.phase==='done'||job.phase==='failed'){
+  if(!job||job.classificationPolicy!==2||job.technicalSchema!==2||job.day!==today||job.phase==='done'||job.phase==='failed'){
    if(job?.id)await housekeeping(()=>removePrefix(prefix+'records:'+job.id+':%'));
    if(job?.staticKey)await housekeeping(()=>env.DB.prepare('DELETE FROM market_history_cache WHERE cache_key=?').bind(job.staticKey).run());
-   job={id:crypto.randomUUID(),classificationPolicy:2,universe,day:today,month,phase:'membership',cursor:0,quoteCursor:0,refCursor:0,members:[],quotes:{},issues:[],chunks:[],buffer:[],createdAt:now};await write(jobKey,job);
+   job={id:crypto.randomUUID(),classificationPolicy:2,technicalSchema:2,universe,day:today,month,phase:'membership',cursor:0,quoteCursor:0,refCursor:0,members:[],quotes:{},issues:[],chunks:[],buffer:[],createdAt:now};await write(jobKey,job);
   }
   if(job.staticKey){
    const metadata=await read(job.staticKey);if(!metadata)throw new Error('Refresh metadata unavailable');Object.assign(job,metadata);
