@@ -135,3 +135,11 @@ test('percentile controls validate before data calls and reuse existing history 
  const s=setup(),base=query+'&short=2&long=3&lookback=4&minHistory=2';const first=await(await handleMarket(request(base),s.env,authorized,s.fetcher)).json(),count=s.calls.length;
  const second=await(await handleMarket(request(base+'&lowerPercentile=10&upperPercentile=90'),s.env,authorized,s.fetcher)).json();assert.equal(second.options.lowerPercentile,10);assert.equal(second.options.upperPercentile,90);assert.equal(s.calls.length,count);assert.deepEqual(first.rows.map(r=>[r.score,r.distance]),second.rows.map(r=>[r.score,r.distance]));
 });
+
+
+test('automatic chart sector uses saved issuer membership while explicit overrides still win',async()=>{
+ const s=setup(),now=Date.parse('2026-10-30T12:00:00Z');
+ s.entries.set('monitor-v1:members:iwb:2026-10',{payload:JSON.stringify({members:[{symbol:'AAPL',sector:'Industrials'}]}),fetched_at:now});
+ const response=await handleMarket(request('symbol=AAPL&from=2020-01-01&to=2020-01-10'),s.env,{},s.fetcher,now),data=await response.json();assert.equal(data.sector,'XLI');assert.equal(s.calls.some(c=>c.url.pathname.endsWith('/profile')),false);
+ const explicit=await handleMarket(request(),s.env,{},s.fetcher,now);assert.equal((await explicit.json()).sector,'XLK');
+});
