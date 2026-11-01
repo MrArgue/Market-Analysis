@@ -31,6 +31,16 @@ test('sector breadth averages company votes directly; multiple classes split one
  const result=aggregateMonitor(records,members,{},rows(),'2026-10-28','iwb'),sector=result.groups[0];assert.equal(sector.technical.score,4.5);assert.equal(sector.technical.strong,75);assert.equal(sector.technicalCoverage.weak.included,2);assert.equal(result.overall.technical.score,4.5);assert.equal(sector.returns.day,0);
 });
 test('stored compact OHLCV roundtrips without losing fields',()=>{const r=rows().slice(0,3);assert.deepEqual(unpackHistory(packHistory(r)),r);});
+
+test('group percentiles average companies directly, sharing one vote across classes and excluding missing values',()=>{
+ const make=(symbol,cik,industry,percentile)=>({symbol,cik,industry,percentile,name:symbol,sector:'Industrials',technical:{},bases:{}});
+ const records=[make('A','1','One',10),make('B','1','One',30),make('C','2','Two',80),make('D','3','Two',null)];
+ const result=aggregateMonitor(records,records,{},rows(),'2026-10-28','iwb');
+ assert.equal(result.groups[0].technical.percentile,50);
+ assert.equal(result.groups[0].industries[0].technical.percentile,20);
+ assert.equal(result.overall.technical.percentile,50);
+ assert.deepEqual(result.overall.technicalCoverage.percentile,{included:2,total:3});
+});
 function setup(n=3){
  const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE market_history_cache(cache_key TEXT PRIMARY KEY,payload TEXT NOT NULL,fetched_at INTEGER NOT NULL)');let queries=0,time=now;
  const calls=[],history=rows('2023-01-01','2026-12-31'),members=Array.from({length:n},(_,i)=>({symbol:'T'+i,name:'Company '+i,cik:String(i+1),sector:'Information Technology',industry:'Software',marketValue:100000,holdingPrice:100}));
