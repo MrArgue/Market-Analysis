@@ -6,21 +6,22 @@ export function researchState(row,options={}){
  return strength*3+extension;
 }
 export function median(values){if(!values.length)return null;const s=[...values].sort((a,b)=>a-b),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
-export function summarizeOutcomes(outcomes){
+export function summarizeOutcomes(outcomes,basis='relative'){
+ const key=basis==='absolute'?'stock':'excess';
  const mean=key=>outcomes.length?outcomes.reduce((s,r)=>s+r[key],0)/outcomes.length:null;
- return{n:outcomes.length,median:median(outcomes.map(r=>r.excess)),mean:mean('excess'),stockMedian:median(outcomes.map(r=>r.stock)),winRate:outcomes.length?100*outcomes.filter(r=>r.excess>0).length/outcomes.length:null,medianDownside:median(outcomes.map(r=>r.downside))};
+ return{n:outcomes.length,median:median(outcomes.map(r=>r[key])),mean:mean(key),relativeMedian:median(outcomes.map(r=>r.excess)),stockMedian:median(outcomes.map(r=>r.stock)),winRate:outcomes.length?100*outcomes.filter(r=>r[key]>0).length/outcomes.length:null,medianDownside:median(outcomes.map(r=>r.downside))};
 }
-export function blockInterval(outcomes,fromIndex,toIndex,horizon){
+export function blockInterval(outcomes,fromIndex,toIndex,horizon,basis='relative'){
  const blocks=Array.from({length:Math.floor((toIndex-fromIndex)/horizon)+1},()=>[]);
- for(const r of outcomes)blocks[Math.floor((r.index-fromIndex)/horizon)]?.push(r.excess);
+ for(const r of outcomes)blocks[Math.floor((r.index-fromIndex)/horizon)]?.push(basis==='absolute'?r.stock:r.excess);
  const occupied=blocks.filter(b=>b.length).length;
  if(occupied<5)return{low:null,high:null,blocks:occupied};
  let seed=92731;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;},samples=[];
  for(let trial=0;trial<300;trial++){const values=[];for(let b=0;b<blocks.length;b++)values.push(...blocks[Math.floor(random()*blocks.length)]);if(values.length)samples.push(median(values));}
  samples.sort((a,b)=>a-b);return{low:samples[Math.floor(samples.length*.025)]??null,high:samples[Math.min(samples.length-1,Math.floor(samples.length*.975))]??null,blocks:occupied};
 }
-export function forwardResearch(data,{from,to,horizon=63,mode='episodes'}={}){
- if(![21,63,126,252].includes(horizon)||!['episodes','days'].includes(mode))throw new Error('Invalid research settings');
+export function forwardResearch(data,{from,to,horizon=63,mode='episodes',basis='relative'}={}){
+ if(!['relative','absolute'].includes(basis)||![21,63,126,252].includes(horizon)||!['episodes','days'].includes(mode))throw new Error('Invalid research settings');
  const rows=data.rows||[],sectorRows=data.research?.sector||[],sector=new Map(sectorRows.map(r=>[r.date,r])),calendar=data.research?.calendar||sectorRows.map(r=>r.date),sectorIndex=new Map(calendar.map((date,i)=>[date,i]));
  const cells=Array.from({length:9},(_,key)=>({key,days:0,episodes:0,excluded:0,outcomes:[]})),baseline=[];
  const first=rows.findIndex(r=>!from||r.date>=from),last=rows.findLastIndex(r=>!to||r.date<=to);
@@ -44,8 +45,8 @@ export function forwardResearch(data,{from,to,horizon=63,mode='episodes'}={}){
   if(mode==='episodes'&&!episode)continue;
   if(result)cell.outcomes.push(result);else cell.excluded++;
  }
- for(const cell of cells){Object.assign(cell,summarizeOutcomes(cell.outcomes));cell.interval=first>=0&&last>=first?blockInterval(cell.outcomes,first,last,horizon):{low:null,high:null,blocks:0};cell.sparse=cell.episodes<10||cell.interval.blocks<5;}
- return{cells,baseline:summarizeOutcomes(baseline),current:researchState(rows.at(-1),data.options),currentDate:rows.at(-1)?.date,provisional:!!rows.at(-1)?.provisional,from:first>=0?rows[first].date:null,to:last>=0?rows[last].date:null,horizon,mode,available:!!data.research?.sector?.length};
+ for(const cell of cells){Object.assign(cell,summarizeOutcomes(cell.outcomes,basis));cell.interval=first>=0&&last>=first?blockInterval(cell.outcomes,first,last,horizon,basis):{low:null,high:null,blocks:0};cell.sparse=cell.episodes<10||cell.interval.blocks<5;}
+ return{cells,baseline:summarizeOutcomes(baseline,basis),current:researchState(rows.at(-1),data.options),currentDate:rows.at(-1)?.date,provisional:!!rows.at(-1)?.provisional,from:first>=0?rows[first].date:null,to:last>=0?rows[last].date:null,horizon,mode,basis,available:!!data.research?.sector?.length};
 }
 // Wrangler preserves names with this helper inside serialized nested functions.
 // The browser module must supply it independently of the Worker bundle scope.
