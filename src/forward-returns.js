@@ -47,4 +47,6 @@ export function forwardResearch(data,{from,to,horizon=63,mode='episodes'}={}){
  for(const cell of cells){Object.assign(cell,summarizeOutcomes(cell.outcomes));cell.interval=first>=0&&last>=first?blockInterval(cell.outcomes,first,last,horizon):{low:null,high:null,blocks:0};cell.sparse=cell.episodes<10||cell.interval.blocks<5;}
  return{cells,baseline:summarizeOutcomes(baseline),current:researchState(rows.at(-1),data.options),currentDate:rows.at(-1)?.date,provisional:!!rows.at(-1)?.provisional,from:first>=0?rows[first].date:null,to:last>=0?rows[last].date:null,horizon,mode,available:!!data.research?.sector?.length};
 }
-export const forwardMathScript=[researchState,median,summarizeOutcomes,blockInterval,forwardResearch].map(fn=>fn.toString()).join('\n')+'\nexport {researchState,forwardResearch};';
+// Wrangler preserves names with this helper inside serialized nested functions.
+// The browser module must supply it independently of the Worker bundle scope.
+export const forwardMathScript='const __name=(fn)=>fn;\n'+[researchState,median,summarizeOutcomes,blockInterval,forwardResearch].map(fn=>fn.toString()).join('\n')+'\nexport {researchState,forwardResearch};';
