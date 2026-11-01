@@ -158,7 +158,7 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch, nowMs =
         } catch { /* Extended hours is optional; regular chart remains usable. */ }
       }
     }
-    return reply({ extendedHours, currentDay, symbol, sector, sectorSource, sectorName: sectorBenchmark.name, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
+    return reply({ research:{calendar:histories.get(benchmark).map(r=>r.date),sector:histories.get(sector).map(r=>({date:r.date,open:r.open??null,close:r.close}))}, extendedHours, currentDay, symbol, sector, sectorSource, sectorName: sectorBenchmark.name, benchmark, from, to, cacheHits, source: 'FMP EOD close and volume', ...result });
   } catch (error) {
     // Use only controlled labels/statuses. Never return raw provider bodies, URLs or exceptions.
     let message, code, status = 502;

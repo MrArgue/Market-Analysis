@@ -8,7 +8,7 @@ test('both pages expose the same navigation with distinct active links',async()=
  assert.match(chartPage,/<a href="\/" aria-current="page">Tech Chart/);
  assert.match(sectorPage,/<a href="\/sectors" aria-current="page">US Sectors\/Industries/);
  const page=await worker.fetch(new Request('https://example.com/sectors'));
- assert.equal(page.status,200);assert.match(await page.text(),/Refresh data/);
+ assert.equal(page.status,200);assert.match(await page.text(),/Refresh Data/);
  assert.match(page.headers.get('Content-Security-Policy'),/script-src 'self'/);
 });
 test('table ranks only industry rows per column and renders names as text',async()=>{

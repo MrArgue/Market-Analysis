@@ -8,7 +8,7 @@ test('homepage displays the responsive technical chart app', async () => {
   const response = request('/');
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/html/);
-  assert.match(await response.text(), /Technical overview/);
+  assert.match(await response.text(), /Technical Overview/);
 });
 
 test('health returns an uncached JSON status', async () => {

@@ -9,6 +9,6 @@ export function sampleHistory() {
    volume: 1000000 + i % 9 * 100000, score, z, percentile, percentileSample:2511, sectorRatio:close/(35+i*.01), signal: percentile >= 95 ? 'overbought' : percentile <= 5 ? 'oversold' : null,
    regime: score >= 5 ? 'strong' : score <= 1 ? 'weak' : 'neutral', averages: [[.047,.046],[.042,.04],[800000,700000]], components: [1,1,1,1,1,1] }); i++;
  }
- return { symbol: 'SAMPLE', sector: 'SECTOR', sectorName: 'Fictional sector ETF', benchmark: 'MARKET', missingBenchmarkDates: 0, options: { short: 50, long: 200, lookback:2511, minHistory:252, lowerPercentile:5, upperPercentile:95 }, rows };
+ return { research:{sector:rows.map((r,i)=>({date:r.date,open:35+i*.01,close:35+i*.01}))}, symbol: 'SAMPLE', sector: 'SECTOR', sectorName: 'Fictional sector ETF', benchmark: 'MARKET', missingBenchmarkDates: 0, options: { short: 50, long: 200, lookback:2511, minHistory:252, lowerPercentile:5, upperPercentile:95 }, rows };
 }
 export const sampleScript = sampleHistory.toString() + '\nexport { sampleHistory };';

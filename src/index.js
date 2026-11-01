@@ -1,3 +1,5 @@
+import {forwardScript} from './forward-panel.js';
+import {forwardMathScript} from './forward-returns.js';
 import { signaturePage as collarPage } from './signature-page.js';
 import { signatureModelScript } from './signature-model.js';
 import { signatureScript as collarScript } from './signature-client.js';
@@ -38,6 +40,8 @@ export default {
       response = new Response(collarScript, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
     } else if (pathname === '/' || pathname === '/sectors') {
       response = new Response(pathname === '/sectors' ? sectorPage : chartPage, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self' https://seia.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff' } });
+    } else if (pathname === '/forward.js' || pathname === '/forward-math.js') {
+      response = new Response(pathname === '/forward.js' ? forwardScript : forwardMathScript, {headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
     } else if (pathname === '/chart.js' || pathname === '/chart-math.js' || pathname === '/sample-data.js' || pathname === '/sectors.js') {
       response = new Response(pathname === '/sectors.js' ? sectorScript : pathname === '/chart.js' ? chartScript : pathname === '/chart-math.js' ? chartMathScript : sampleScript, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
     } else {
