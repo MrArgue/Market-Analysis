@@ -76,6 +76,22 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch, nowMs =
   try {
     const sectorSource = 'Sector ETF proxy';
     if (!sector) {
+      // Reuse monthly issuer membership so chart and monitor compare the same
+      // stock against the same sector. Never fetch holdings on a chart visit.
+      const day = exchangeDate(now), prior = new Date(day+'T12:00:00Z');
+      prior.setUTCDate(1); prior.setUTCMonth(prior.getUTCMonth()-1);
+      for (const month of [day.slice(0,7), prior.toISOString().slice(0,7)]) {
+        const row = await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind('monitor-v1:members:iwb:'+month).first();
+        if (!row) continue;
+        try {
+          const member = JSON.parse(row.payload).members?.find(m=>m.symbol===symbol);
+          if (member && Object.hasOwn(sectorEtfs, member.sector)) sector = member.sector;
+        } catch { /* Fall back to the existing profile lookup. */ }
+        // A current snapshot supersedes the prior membership, including exits.
+        break;
+      }
+    }
+    if (!sector) {
       const key = JSON.stringify(['fmp-profile-sector-v1', symbol]);
       stage = 'cache-read';
       const cached = await env.DB.prepare('SELECT payload, fetched_at FROM market_history_cache WHERE cache_key = ?').bind(key).first();
@@ -178,3 +194,4 @@ export async function handleMarket(request, env, ctx, fetchImpl = fetch, nowMs =
     return reply({ error: message, code }, status);
   }
 }
+

@@ -86,8 +86,8 @@ test('temporary stock-history failure is repaired on later refresh without downl
 test('split-basis change performs targeted full repair and never mixes old/new prices',async()=>{
  const s=setup();try{await s.run();s.setTime(s.time+61000);const count=s.calls.length;const fetcher=async url=>{const response=await s.fetcher(url),u=new URL(url),raw=await response.json();if(u.pathname.endsWith('/batch-quote'))return Response.json(raw.map(q=>q.symbol==='T0'?{...q,price:q.price/2,previousClose:q.previousClose/2,volume:q.volume*2}:q));if(u.pathname.endsWith('/historical-price-eod/full')&&u.searchParams.get('symbol')==='T0')return Response.json(raw.map(r=>({...r,close:r.close/2,volume:r.volume*2})));return Response.json(raw);};const result=await s.run(fetcher),added=s.calls.slice(count).filter(c=>c.path.endsWith('/historical-price-eod/full'));assert.equal(added.length,3);assert.ok(added.every(c=>c.symbol==='T0'));const stock=result.data.groups[0].industries[0].stocks.find(s=>s.symbol==='T0');assert.ok(Number.isFinite(stock.technical.score));}finally{s.close();}
 });
-test('unresolved aerospace classification is excluded rather than displayed under Technology',async()=>{
- const s=setup();try{const list=s.members.map(m=>m.symbol==='T0'?{...m,industry:'Aerospace & Defense'}:m);s.seed('monitor-v1:members:iwb:2026-10',{members:list,issues:[]});const report=await s.run();assert.equal(report.data.coverage.processed,2);assert.equal(report.data.groups[0].industries.some(i=>i.name==='Aerospace & Defense'),false);assert.ok(report.data.review.excluded.some(i=>i.symbol==='T0'));}finally{s.close();}
+test('unresolved aerospace industry is retained in a review bucket rather than displayed under Technology',async()=>{
+ const s=setup();try{const list=s.members.map(m=>m.symbol==='T0'?{...m,industry:'Aerospace & Defense'}:m);s.seed('monitor-v1:members:iwb:2026-10',{members:list,issues:[]});const report=await s.run();assert.equal(report.data.coverage.processed,3);assert.equal(report.data.groups[0].industries.some(i=>i.name==='Aerospace & Defense'),false);const review=report.data.groups[0].industries.find(i=>i.name==='Industry under review');assert.equal(review.rankable,false);assert.equal(review.stocks[0].symbol,'T0');}finally{s.close();}
 });
 test('Paid batches remain bounded and immutable metadata stays outside rewritten checkpoints',async()=>{
  const s=setup();try{let r=await s.invoke({action:'start'}),steps=0;
@@ -110,4 +110,23 @@ test('housekeeping failure cannot hide a published report or block a later refre
 });
 test('prefix cleanup is indexed and does not delete neighboring keys',async()=>{
  const s=setup();try{s.seed('monitor-v1:records:unrelated:0',{keep:true});await s.run();assert.ok(s.db.prepare('SELECT payload FROM market_history_cache WHERE cache_key=?').get('monitor-v1:records:unrelated:0'));assert.equal(s.db.prepare("SELECT count(*) AS n FROM market_history_cache WHERE cache_key LIKE 'monitor-v1:partition:%'").get().n,0);}finally{s.close();}
+});
+
+
+test('IWB issuer sector wins over FMP and review classification persists without repeated profiles',async()=>{
+ const s=setup();try{
+  s.seed('monitor-v1:members:iwb:2026-10',{members:s.members.map(m=>m.symbol==='T0'?{...m,sector:'Industrials',industry:null,cik:null}:m),issues:[]});
+  const first=await s.run(),g=first.data.groups.find(g=>g.name==='Industrials'),i=g.industries[0];
+  assert.equal(first.data.coverage.processed,3);assert.equal(i.name,'Industry under review');assert.equal(i.rankable,false);assert.equal(i.stocks[0].classificationReview.providerSector,'Information Technology');
+  const before=s.calls.length;s.setTime(s.time+61000);const second=await s.run();assert.equal(second.data.coverage.processed,3);assert.equal(s.calls.slice(before).filter(c=>c.path.endsWith('/profile')).length,0);
+ }finally{s.close();}
+});
+
+test('short-history stocks retain available metrics and leave longer windows unavailable',async()=>{
+ const s=setup();try{
+  const fetcher=async input=>{const u=new URL(input);if(u.pathname.endsWith('/historical-price-eod/full')&&u.searchParams.get('symbol')==='T0')return Response.json(s.history.filter(r=>r.date>='2026-09-01'&&r.date>=u.searchParams.get('from')&&r.date<=u.searchParams.get('to')));return s.fetcher(input);};
+  const report=await s.run(fetcher),stock=report.data.groups[0].industries[0].stocks.find(r=>r.symbol==='T0');
+  assert.equal(report.data.coverage.processed,3);assert.ok(Number.isFinite(stock.returns.day));assert.equal(stock.returns.year,null);assert.equal(stock.technical.score,null);assert.equal(stock.technical.overbought,null);assert.equal(stock.technical.above200,null);assert.equal(stock.technical.high252,null);assert.ok(Number.isFinite(stock.technical.high20));
+  assert.equal(report.data.overall.technicalCoverage.score.included,2);assert.equal(report.data.overall.technicalCoverage.score.total,3);
+ }finally{s.close();}
 });

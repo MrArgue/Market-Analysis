@@ -90,3 +90,13 @@ test('repeated HTML failures stop after bounded retries and explain how to resum
  const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()]));let calls=0;
  vm.runInNewContext(sectorScript,{setTimeout:callback=>callback(),document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>{calls++;return{status:503,headers:{get:()=> 'text/html'}};}});await nodes['load-sectors'].onclick();assert.equal(calls,3);assert.match(nodes['sector-status'].textContent,/Saved progress is retained/);assert.equal(nodes['load-sectors'].disabled,false);
 });
+
+
+test('review buckets are unranked and missing stock values render a dash',async()=>{
+ class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
+ const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()]));
+ const returns=n=>Object.fromEntries(['day','five','mtd','fourWeeks','threeMonths','ytd','year'].map(k=>[k,n]));
+ const data={groups:[{name:'Industrials',industries:[...Array.from({length:5},(_,i)=>({name:'Industry '+i,returns:returns(i)})),{name:'Industry under review',rankable:false,returns:returns(1000),stocks:[{name:'Young stock',returns:{day:1,year:null}}]}]}],status:'Ready'};
+ vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>({ok:true,json:async()=>data})});await nodes['load-sectors'].onclick();
+ const all=n=>n.children.flatMap(c=>[c,...all(c)]),elements=all(nodes['sector-results']),review=elements.find(n=>n.className==='industry'&&n.children[0]?.textContent==='Industry under review');assert.ok(review);assert.ok(review.children.slice(1).every(n=>!n.className));assert.ok(elements.some(n=>n.textContent==='-'));assert.equal(elements.filter(n=>n.className==='return-best').length,7);
+});

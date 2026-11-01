@@ -1,0 +1,13 @@
+# IWB classification recovery
+
+IWB membership and sectors follow the monthly iShares holdings snapshot. A sector disagreement with an exact-symbol FMP profile no longer excludes an otherwise identified IWB security. Its original FMP sector/industry are retained as review metadata, and its displayed industry is **Industry under review** within the issuer sector. This bucket contributes to sector/universe totals but is excluded from industry quintile thresholds and highlighting. An incompatible Aerospace & Defense mapping is also quarantined. S&P 500 classification validation remains unchanged.
+
+Empty profiles or missing company identity remain excluded. Holdings imported as unsupported issuer sectors (including Other) are not automatically promoted. This keeps UWMC-R-W and MSGR outside the recovered set pending suitable data/classification.
+
+Recovery uses the normal eleven-year history loader, not the audit's three-year probes. Healthy histories and checkpoints remain reusable; provider pacing remains 550 calls per rolling minute. Classification policy version 2 restarts old monitor jobs so a partially processed old-policy report cannot mix exclusions with the new policy. Old saved reports remain visible until the replacement is ready. No schema, secret, Access or infrastructure settings change.
+
+Each stock's missing return baseline or technical input stays null and renders as `-`. Available shorter-window metrics remain visible; no missing value becomes zero. Technical aggregates retain independent valid-company denominators. Aggregate returns retain their existing complete-company cohort across return windows. The percentile still requires at least 252 prior valid ratio distances, up to the existing 2,511-observation lookback; eleven years is a fetch target, not a new minimum age requirement. Gapped histories may suppress score/percentiles even when recent price-only windows remain available.
+
+The Tech Chart's automatic sector selection reuses current-month cached IWB membership, or the prior month if no current snapshot exists, before falling back to the FMP profile. Explicit sector overrides still take precedence. No additional issuer/FMP calls are introduced by that lookup.
+
+Verification covers sector disagreements, persistent review metadata, incompatible industries, short histories and per-indicator coverage, unranked review buckets, dash rendering, and chart/monitor sector consistency. After approved deployment, run the existing IWB refresh to validate full histories and inspect recovered coverage; do not promise recovery of all audit candidates before that live run.

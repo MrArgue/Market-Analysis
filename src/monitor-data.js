@@ -57,10 +57,10 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
   if(!locked){job=await read(jobKey);return await progress(2);}
   job=await read(jobKey);
   if(input.action==='step'&&(!job||input.id!==job.id))return reply({error:'Refresh session changed. Start again.'},409);
-  if(!job||job.day!==today||job.phase==='done'||job.phase==='failed'){
+  if(!job||job.classificationPolicy!==2||job.day!==today||job.phase==='done'||job.phase==='failed'){
    if(job?.id)await housekeeping(()=>removePrefix(prefix+'records:'+job.id+':%'));
    if(job?.staticKey)await housekeeping(()=>env.DB.prepare('DELETE FROM market_history_cache WHERE cache_key=?').bind(job.staticKey).run());
-   job={id:crypto.randomUUID(),universe,day:today,month,phase:'membership',cursor:0,quoteCursor:0,refCursor:0,members:[],quotes:{},issues:[],chunks:[],buffer:[],createdAt:now};await write(jobKey,job);
+   job={id:crypto.randomUUID(),classificationPolicy:2,universe,day:today,month,phase:'membership',cursor:0,quoteCursor:0,refCursor:0,members:[],quotes:{},issues:[],chunks:[],buffer:[],createdAt:now};await write(jobKey,job);
   }
   if(job.staticKey){
    const metadata=await read(job.staticKey);if(!metadata)throw new Error('Refresh metadata unavailable');Object.assign(job,metadata);
@@ -133,9 +133,18 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
     try{
      if(!member.industry||!member.cik){
       const rows=await provider('profile',{symbol:member.symbol}),p=rows.find(p=>p.symbol===member.symbol);
-      if(!p?.industry||!p?.cik||canonicalSector(p.sector)!==member.sector)throw new Error('Classification or company identity unresolved');member.industry=p.industry;member.cik=p.cik;(job.memberUpdates||={})[member.symbol]={industry:p.industry,cik:p.cik};
+      if(!p?.industry||!p?.cik)throw new Error('Classification or company identity unresolved');
+      const disagreement=canonicalSector(p.sector)!==member.sector;
+      if(disagreement&&universe!=='iwb')throw new Error('Classification or company identity unresolved');
+      member.industry=disagreement?'Industry under review':p.industry;member.cik=p.cik;
+      if(disagreement)member.classificationReview={providerSector:canonicalSector(p.sector),providerIndustry:p.industry};
+      (job.memberUpdates||={})[member.symbol]={industry:member.industry,cik:p.cik,...(member.classificationReview?{classificationReview:member.classificationReview}:{})};
      }
-     if(member.industry==='Aerospace & Defense'&&member.sector!=='Industrials')throw new Error('Classification unresolved');
+     if(member.industry==='Aerospace & Defense'&&member.sector!=='Industrials'){
+      if(universe!=='iwb')throw new Error('Classification unresolved');
+      member.classificationReview={providerIndustry:member.industry};member.industry='Industry under review';
+      (job.memberUpdates||={})[member.symbol]={industry:member.industry,cik:member.cik,classificationReview:member.classificationReview};
+     }
      if(cold){
       const repair=q&&prepared?.asOf===job.asOf&&prepared?.state.previousClose&&Math.abs(q.previousClose/prepared.state.previousClose-1)>.01;
       const rows=await history(member.symbol,companyId(member),repair),benchmark=await referenceClose('^GSPC'),sector=await referenceClose(sectorProxy(member.sector));

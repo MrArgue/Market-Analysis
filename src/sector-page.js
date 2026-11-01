@@ -14,13 +14,13 @@ const returnColumns=[['day','1-Day'],['five','5-Day'],['mtd','MTD'],['fourWeeks'
 const technicalColumns=[['score','Avg score'],['strong','Strong'],['weak','Weak'],['overbought','Overbought'],['oversold','Oversold'],['above50','Above 50D'],['above200','Above 200D'],['advancing','Advancing'],['declining','Declining'],['high20','20D highs'],['low20','20D lows'],['high63','63D highs'],['low63','63D lows'],['high252','252D highs'],['low252','252D lows']];
 let columns=returnColumns;
 function element(tag,text,className){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(className)n.className=className;return n;}
-function format(value){return Number.isFinite(value)?(value>0?'+':'')+value.toFixed(1)+'%':'—';}
+function format(value){return Number.isFinite(value)?(value>0?'+':'')+value.toFixed(1)+'%':'-';}
 function row(item,type,thresholds){
- const tr=element('tr',undefined,type);const name=element('th',item.name,type==='industry'?'industry-name':'');name.scope='row';tr.append(name);
+ const tr=element('tr',undefined,type);const name=element('th',item.name,type==='industry'?'industry-name':'');name.scope='row';if(item.classificationReview)name.title='Industry mapping under review; sector follows iShares';tr.append(name);
  for(const [key]of columns){
-  const value=(view==='returns'?item.returns:item.technical)?.[key],text=!Number.isFinite(value)?'—':view==='technical'?(key==='score'?value.toFixed(2)+' / 6':type==='stock'?(value?'Yes':'No'):value.toFixed(1)+'%'):format(value),cell=element('td',text),limits=thresholds[key];
+  const value=(view==='returns'?item.returns:item.technical)?.[key],text=!Number.isFinite(value)?'-':view==='technical'?(key==='score'?value.toFixed(2)+' / 6':type==='stock'?(value?'Yes':'No'):value.toFixed(1)+'%'):format(value),cell=element('td',text),limits=thresholds[key];
   if(view==='technical'&&type==='stock'&&['overbought','oversold'].includes(key)&&Number.isFinite(item.percentile))cell.title='Stock percentile: '+item.percentile.toFixed(2)+'%';
-  if(view==='returns'&&type==='industry'&&Number.isFinite(value)&&limits&&limits.low<limits.high){
+  if(view==='returns'&&type==='industry'&&item.rankable!==false&&Number.isFinite(value)&&limits&&limits.low<limits.high){
    if(value>=limits.high){cell.className='return-best';cell.title='Top 20% of industries';}
    else if(value<=limits.low){cell.className='return-worst';cell.title='Bottom 20% of industries';}
   }
@@ -36,7 +36,7 @@ function render(data){
  const legend=document.querySelector?.('.return-legend');if(legend)legend.hidden=view==='technical';
  const thresholds={};
  for(const [key]of columns){
-  const values=data.groups.flatMap(g=>g.industries.map(i=>i.returns?.[key])).filter(Number.isFinite).sort((a,b)=>a-b);
+  const values=data.groups.flatMap(g=>g.industries.filter(i=>i.rankable!==false).map(i=>i.returns?.[key])).filter(Number.isFinite).sort((a,b)=>a-b);
   if(values.length>=5){const count=Math.max(1,Math.floor(values.length*.2));thresholds[key]={low:values[count-1],high:values[values.length-count]};}
  }
  const results=$('sector-results');results.className='sector-grid'+(view==='technical'?' technical-grid':'');results.replaceChildren();
