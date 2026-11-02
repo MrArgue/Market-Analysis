@@ -1,3 +1,7 @@
+import {macroPage,macroClient} from './macro-page.js';
+import {macroModelScript} from './macro-model.js';
+import {macroReturnScript} from './macro-returns.js';
+import {handleMacro} from './macro-data.js';
 import {forwardScript} from './forward-panel.js';
 import {forwardMathScript} from './forward-returns.js';
 import { signaturePage as collarPage } from './signature-page.js';
@@ -18,6 +22,12 @@ import { sampleScript } from './sample-data.js';
 export default {
   fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname;
+    if(path==='/api/macro')return handleMacro(request,env);
+    if(['/macro','/macro.js','/macro-model.js','/macro-returns.js'].includes(path)){
+      if(!['GET','HEAD'].includes(request.method))return new Response('Method Not Allowed',{status:405,headers:{Allow:'GET, HEAD'}});
+      const body={'/macro':macroPage,'/macro.js':macroClient,'/macro-model.js':macroModelScript,'/macro-returns.js':macroReturnScript}[path];
+      return new Response(request.method==='HEAD'?null:body,{headers:{'Content-Type':path==='/macro'?'text/html; charset=utf-8':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}});
+    }
     if(['/exclusion-audit','/exclusion-audit.js'].includes(path)&&['GET','HEAD'].includes(request.method))return new Response(request.method==='HEAD'?null:path.endsWith('.js')?exclusionAuditScript:exclusionAuditPage,{headers:{'Content-Type':path.endsWith('.js')?'text/javascript; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}});
     if(path==='/monitor-sample.js'&&['GET','HEAD'].includes(request.method))return new Response(request.method==='HEAD'?null:monitorSampleScript,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
     if (path === '/api/signature-proposal') return new Response('PDF proposals are postponed while the page features are tested.', {status:503,headers:{'Cache-Control':'no-store'}});

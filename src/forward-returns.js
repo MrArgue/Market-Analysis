@@ -50,4 +50,4 @@ export function forwardResearch(data,{from,to,horizon=63,mode='episodes',basis='
 }
 // Wrangler preserves names with this helper inside serialized nested functions.
 // The browser module must supply it independently of the Worker bundle scope.
-export const forwardMathScript='const __name=(fn)=>fn;\n'+[researchState,median,summarizeOutcomes,blockInterval,forwardResearch].map(fn=>fn.toString()).join('\n')+'\nexport {researchState,forwardResearch};';
+export const forwardMathScript='const __name=(fn)=>fn;\n'+[researchState,median,summarizeOutcomes,blockInterval,forwardResearch].map(fn=>fn.toString()).join('\n')+'\nexport {researchState,forwardResearch};\nexport {median,blockInterval};';

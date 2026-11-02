@@ -1,5 +1,9 @@
 # Validated data access
 
+## Macro research checks — November 1, 2026 Pacific
+
+See [the fixed source-probe results](docs/macro-source-probe.json) and [macro methodology and coverage gates](docs/macro-regime-research.md). Two public FRED CSV reads checked 2025 monthly history: INDPRO returned 12 numeric rows; CPIAUCSL returned 11. These are current-history observations, not point-in-time data. ALFRED/FRED API and FMP dividend-adjusted ETF coverage were not tested because session credentials are absent. No live macro regime or asset/factor performance claims are supported yet. Ordinary chart price access does not validate total-return history. No production write or large provider batch ran.
+
 These are observed checks against the project's actual FMP account, not promises of access to every symbol or dataset. Documentation and plan labels are advisory; validate the exact endpoint, symbols, fields and dates before new feature work.
 
 | Checked at (UTC) | Endpoint | Symbol | HTTP | Returned session date | Fields validated |
