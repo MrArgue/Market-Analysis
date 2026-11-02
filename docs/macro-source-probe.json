@@ -1,0 +1,35 @@
+{
+  "checkedAt": "2026-11-02T00:11:23.474Z",
+  "maxRequests": 14,
+  "actualRequests": 2,
+  "results": [
+    {
+      "label": "FRED current CSV INDPRO",
+      "http": 200,
+      "status": "current-only-validated",
+      "rows": 12,
+      "first": "2025-01-01",
+      "last": "2025-12-01",
+      "pointInTime": false
+    },
+    {
+      "label": "FRED current CSV CPIAUCSL",
+      "http": 200,
+      "status": "shape-or-coverage-failure",
+      "rows": 11,
+      "first": "2025-01-01",
+      "last": "2025-12-01",
+      "pointInTime": false
+    },
+    {
+      "label": "ALFRED as-of observations",
+      "status": "blocked-missing-FRED_API_KEY",
+      "pointInTime": false
+    },
+    {
+      "label": "FMP dividend-adjusted ETF history",
+      "status": "blocked-missing-FMP_API_KEY",
+      "coverageVerified": false
+    }
+  ]
+}
