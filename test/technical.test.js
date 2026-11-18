@@ -46,7 +46,7 @@ test('midrank ties keep flat or numerically indistinguishable distances at the 5
  assert.deepEqual(percentileRanks([5,5,5,5,5],3,2).slice(2).map(r=>r.percentile),[50,50,50]);assert.equal(percentileRanks([0,1e-13,-1e-13,0],3,2).at(-1).percentile,50);
 });
 test('default percentile settings are configurable, bounded, and require a useful prior sample',()=>{
- const d=methodology();assert.equal(d.lookback,2511);assert.equal(d.minHistory,252);assert.equal(d.lowerPercentile,5);assert.equal(d.upperPercentile,95);assert.equal(methodology({lookback:20}).minHistory,20);
+ const d=methodology();assert.equal(d.short,50);assert.equal(d.long,100);assert.equal(d.lookback,2511);assert.equal(d.minHistory,252);assert.equal(d.lowerPercentile,5);assert.equal(d.upperPercentile,95);assert.equal(methodology({lookback:20}).minHistory,20);
  for(const input of [{lowerPercentile:-1},{lowerPercentile:50},{upperPercentile:50},{upperPercentile:101},{minHistory:1},{minHistory:3000},{minHistory:2.5}])assert.throws(()=>methodology(input));
 });
 test('signals include the exact 5th/95th percentile boundaries and do not depend on sigma',()=>{

@@ -1,3 +1,9 @@
+# Methodology update — 18 November 2026
+
+**Current application defaults:** six strict comparisons of stock/sector ratio, stock/^GSPC ratio, and OBV against their 50- and **100-observation** SMAs. This supersedes the 200-day defaults described in the original workbook audit below, which remains an unchanged historical record. The three long-window signals are components[1], [3], and [5]. Score remains 0–6 with weak <=1 and strong >=5; unavailable inputs remain null. The current overbought/oversold percentile ranks the stock/sector ratio's distance from its **100-day** SMA against the preceding up to 2,511 valid distances (minimum 252), excluding today; 95th/5th cutoffs and midrank ties remain unchanged. Both the Tech Chart and the Industry/Sector breadth calculations use the updated windows, as do the Above 50/100D breadth flags. A separate monitor report and prepared-state cache version prevents reuse of previously computed 50/200-day values. Existing historical price caches can be reused. The workbook reconciliation numbers below are historical verification of the *original* 50/200 methodology; they are not validation of the new defaults.
+
+---
+
 # Workbook trace and initial stock chart
 
 The original workbook trace below is unchanged. The current chart uses actual OHLC and temporarily restores sector ETF proxies because sector-index history is outside the FMP plan; see [the current chart update](CHART_UPDATES.md). The data/security bullets describe the initial release and are superseded by that update where noted.

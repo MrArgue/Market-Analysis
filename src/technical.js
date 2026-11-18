@@ -1,4 +1,4 @@
-export const defaults = Object.freeze({ short: 50, long: 200, lookback: 2511, sigma: 2, lowerPercentile: 5, upperPercentile: 95, minHistory: 252, sell: 1, buy: 5, flat: 'subtract' });
+export const defaults = Object.freeze({ short: 50, long: 100, lookback: 2511, sigma: 2, lowerPercentile: 5, upperPercentile: 95, minHistory: 252, sell: 1, buy: 5, flat: 'subtract' });
 
 export function methodology(input = {}) {
   const o = { ...defaults, ...input };
