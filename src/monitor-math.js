@@ -1,7 +1,7 @@
 import {defaults} from './technical.js';
 import {baselineDates,companyWeights,returnColumns} from './constituent-math.js';
 import {sectorAliases,sectorEtfs} from './sectors.js';
-export const technicalColumns=[['score','Avg score'],['percentile','Ratio percentile'],['strong','Strong'],['weak','Weak'],['overbought','Overbought'],['oversold','Oversold'],['above50','Above 50D'],['above200','Above 200D'],['advancing','Advancing'],['declining','Declining'],['high20','20D highs'],['low20','20D lows'],['high63','63D highs'],['low63','63D lows'],['high252','252D highs'],['low252','252D lows']];
+export const technicalColumns=[['score','Avg score'],['percentile','Ratio percentile'],['strong','Strong'],['weak','Weak'],['overbought','Overbought'],['oversold','Oversold'],['above50','Above 50D'],['above100','Above 100D'],['advancing','Advancing'],['declining','Declining'],['high20','20D highs'],['low20','20D lows'],['high63','63D highs'],['low63','63D lows'],['high252','252D highs'],['low252','252D lows']];
 export const companyId=m=>String(m.cik||'').replace(/^0+/,'');
 export const canonicalSector=s=>sectorAliases[s]||s;
 export const sectorProxy=s=>sectorEtfs[canonicalSector(s)];
@@ -25,15 +25,15 @@ export function prepareStock(history,sector,market,asOf){
    const ratio=sectors.get(r.date)>0?r.close/sectors.get(r.date):null;
    series.sectorRatio.push(ratio);series.marketRatio.push(markets.get(r.date)>0?r.close/markets.get(r.date):null);series.obv.push(obv);
    if(ratio===null)missing++;else total+=ratio;
-   if(i>=200){const old=series.sectorRatio[i-200];if(old===null)missing--;else total-=old;}
-   if(i>=199&&!missing&&total>0)distanceHistory.push(ratio/(total/200)-1);
+   if(i>=100){const old=series.sectorRatio[i-100];if(old===null)missing--;else total-=old;}
+   if(i>=99&&!missing&&total>0)distanceHistory.push(ratio/(total/100)-1);
   }
  }
  const recent=(key,n)=>series[key].slice(-(n-1));
- const sums={};for(const key of ['sectorRatio','marketRatio','obv'])for(const n of [50,200]){
+ const sums={};for(const key of ['sectorRatio','marketRatio','obv'])for(const n of [50,100]){
   const values=recent(key,n);sums[key+n]=values.length===n-1?sum(values):null;
  }
- const prices={};for(const n of [20,50,63,200,252]){
+ const prices={};for(const n of [20,50,63,100,252]){
   const dates=calendar.slice(-n),values=dates.map(d=>byDate.get(d)?.close);
   prices[n]={meanPrior:dates.length>=n-1?average(values.slice(-(n-1))):null,high:dates.length===n&&values.every(Number.isFinite)?Math.max(...values):null,low:dates.length===n&&values.every(Number.isFinite)?Math.min(...values):null};
  }
@@ -45,14 +45,14 @@ export function liveTechnicals(state,q,sectorQuote,marketQuote){
  if(!q||!(q.price>0)||!(q.previousClose>0))return{values,percentile};
  values.advancing=Number(q.price>q.previousClose);values.declining=Number(q.price<q.previousClose);
  if(!state||state.previousClose===null||Math.abs(q.previousClose/state.previousClose-1)>.01)return{values,percentile};
- for(const n of [50,200]){const prior=state.prices[n].meanPrior;if(Number.isFinite(prior))values['above'+n]=Number(q.price>((n-1)*prior+q.price)/n);}
+ for(const n of [50,100]){const prior=state.prices[n].meanPrior;if(Number.isFinite(prior))values['above'+n]=Number(q.price>((n-1)*prior+q.price)/n);}
  for(const n of [20,63,252])for(const type of ['high','low']){const threshold=state.prices[n][type];if(Number.isFinite(threshold))values[type+n]=Number(type==='high'?q.price>=threshold:q.price<=threshold);}
  const ratio=sectorQuote?.price>0?q.price/sectorQuote.price:null,marketRatio=marketQuote?.price>0?q.price/marketQuote.price:null;
  const obv=state.volumeComplete&&Number.isFinite(q.volume)&&q.volume>=0&&Number.isFinite(state.previousObv)?state.previousObv+(q.price>q.previousClose?q.volume:-q.volume):null;
  const components=[];let distance=null;
- for(const [key,current]of [['sectorRatio',ratio],['marketRatio',marketRatio],['obv',obv]])for(const n of [50,200]){
+ for(const [key,current]of [['sectorRatio',ratio],['marketRatio',marketRatio],['obv',obv]])for(const n of [50,100]){
   const prior=state.sums[key+n];const mean=Number.isFinite(prior)&&Number.isFinite(current)?(prior+current)/n:null;
-  components.push(mean===null?null:Number(current>mean));if(key==='sectorRatio'&&n===200&&mean>0)distance=current/mean-1;
+  components.push(mean===null?null:Number(current>mean));if(key==='sectorRatio'&&n===100&&mean>0)distance=current/mean-1;
  }
  if(components.every(Number.isFinite)){values.score=components.reduce((a,b)=>a+b,0);values.strong=Number(values.score>=defaults.buy);values.weak=Number(values.score<=defaults.sell);}
  if(Number.isFinite(distance)&&state.distances.length>=defaults.minHistory){
@@ -94,4 +94,4 @@ export function aggregateMonitor(records,members,quotes,benchmark,asOf,universe,
  const benchmarkRow={name:'S&P 500 · official price index',returns:Object.fromEntries(returnColumns.map(k=>{const base=k==='day'?q?.previousClose:index.get(dates[k]);return[k,base>0&&q?.price>0?(q.price/base-1)*100:null];}))};
  return{state:'ready',universe,asOf,groups,benchmark:benchmarkRow,overall:{name:(universe==='iwb'?'IWB equities':'S&P 500')+' · company breadth',...rollup(records,members)},sourceLabel:(universe==='iwb'?'IWB equity holdings · Russell 1000 proxy':'S&P 500 membership')+' · Value-weighted returns / Equal-company technical breadth',coverage:{universe:members.length,companies:allCompanies.size,processed:records.length,returnCompanies:returnEligible.size},issues,status:records.length+' / '+members.length+' securities processed · '+allCompanies.size+' identified companies · Prices as of '+asOf+' · Intraday technicals are provisional',methodology:monitorMethodology};
 }
-export const monitorMethodology='IWB equities are an ETF-holdings proxy for the Russell 1000, not official index membership. IWB sectors follow iShares; conflicting FMP industries are labeled Industry under review and excluded from industry quintile rankings. Membership/classifications refresh monthly; healthy OHLCV histories persist and receive incremental daily updates. IWB return baskets use issuer holding quantities estimated from market value / issuer price; S&P baskets retain allocated company-cap share estimates. Returns are price returns excluding dividends, use current members and estimated units, and have survivorship/hindsight bias. Incomplete companies are excluded from aggregate returns. Technicals use equal company votes: valid listed share classes are averaged within a CIK company, then companies are averaged directly for each sector/industry. Group ratio percentiles average valid stock percentiles within each company, then average companies directly; they are not percentiles of an aggregate sector price series. Each indicator has its own valid-company denominator; missing is unavailable, not zero. Stock rows show individual flags. Strong score >=5; weak <=1; stock/sector and stock/S&P ratios and OBV versus 50/200-session means match the Tech Chart. Percentile uses ratio / 200-session mean - 1, the preceding up to 2,511 valid distances (at least 252), midrank ties, overbought >=95th / oversold <=5th. Young sector ETFs shorten available percentile history. Above-MA tests include current regular-session price; 20/63/252-session closing highs/lows compare current price with the preceding N completed closes, ties included. Advancers/decliners use previousClose; unchanged companies remain in the denominator. Technicals are provisional during the regular session; extended-hours trades are excluded. Histories missing sessions or volume reduce technical coverage. Sector and universe roll-ups are computed from company votes, never by averaging industry percentages. Corporate-action price-basis changes trigger targeted history repairs. Industry top/bottom quintiles are descriptive, not investment recommendations.';
+export const monitorMethodology='IWB equities are an ETF-holdings proxy for the Russell 1000, not official index membership. IWB sectors follow iShares; conflicting FMP industries are labeled Industry under review and excluded from industry quintile rankings. Membership/classifications refresh monthly; healthy OHLCV histories persist and receive incremental daily updates. IWB return baskets use issuer holding quantities estimated from market value / issuer price; S&P baskets retain allocated company-cap share estimates. Returns are price returns excluding dividends, use current members and estimated units, and have survivorship/hindsight bias. Incomplete companies are excluded from aggregate returns. Technicals use equal company votes: valid listed share classes are averaged within a CIK company, then companies are averaged directly for each sector/industry. Group ratio percentiles average valid stock percentiles within each company, then average companies directly; they are not percentiles of an aggregate sector price series. Each indicator has its own valid-company denominator; missing is unavailable, not zero. Stock rows show individual flags. Strong score >=5; weak <=1; stock/sector and stock/S&P ratios and OBV versus 50/100-session means match the Tech Chart. Percentile uses ratio / 100-session mean - 1, the preceding up to 2,511 valid distances (at least 252), midrank ties, overbought >=95th / oversold <=5th. Young sector ETFs shorten available percentile history. Above-MA tests include current regular-session price; 20/63/252-session closing highs/lows compare current price with the preceding N completed closes, ties included. Advancers/decliners use previousClose; unchanged companies remain in the denominator. Technicals are provisional during the regular session; extended-hours trades are excluded. Histories missing sessions or volume reduce technical coverage. Sector and universe roll-ups are computed from company votes, never by averaging industry percentages. Corporate-action price-basis changes trigger targeted history repairs. Industry top/bottom quintiles are descriptive, not investment recommendations.';
