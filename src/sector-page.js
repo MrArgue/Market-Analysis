@@ -11,9 +11,9 @@ const savedReports=new Map();
 const phaseLabels={membership:'Reading monthly holdings',quotes:'Updating quotes',references:'Preparing shared benchmarks',stocks:'Preparing stock data',assemble:'Building sector and industry totals',partition:'Organizing sector data','sector-read':'Reading sector data','sector-calculate':'Calculating sector breadth',publish:'Saving the finished monitor',waiting:'Another refresh is running'};
 const expandedIndustries=new Set(),collapsedSectors=new Set();
 const returnColumns=[['day','1-Day'],['five','5-Day'],['mtd','MTD'],['fourWeeks','4-Wk'],['threeMonths','3M'],['ytd','YTD'],['year','1-Year']];
-const technicalColumns=[['score','Avg Score'],['percentile','Ratio %ile'],['above','Above 50/200D'],['direction','Adv/Dec'],['range20','20D H/L'],['range63','63D H/L'],['range252','252D H/L']];
-const pairs={above:['above50','above200'],direction:['advancing','declining'],range20:['high20','low20'],range63:['high63','low63'],range252:['high252','low252']};
-const columnHelp={percentile:'Percentile of stock/sector ratio distance from its 200-day average; equal-company mean for groups',above:'Above 50-day / 200-day moving average',direction:'Advancing / declining today',range20:'20-session closing highs / lows',range63:'63-session closing highs / lows',range252:'252-session closing highs / lows'};
+const technicalColumns=[['score','Avg Score'],['percentile','Ratio %ile'],['above','Above 50/100D'],['direction','Adv/Dec'],['range20','20D H/L'],['range63','63D H/L'],['range252','252D H/L']];
+const pairs={above:['above50','above100'],direction:['advancing','declining'],range20:['high20','low20'],range63:['high63','low63'],range252:['high252','low252']};
+const columnHelp={percentile:'Percentile of stock/sector ratio distance from its 100-day average; equal-company mean for groups',above:'Above 50-day / 100-day moving average',direction:'Advancing / declining today',range20:'20-session closing highs / lows',range63:'63-session closing highs / lows',range252:'252-session closing highs / lows'};
 let columns=returnColumns;
 function element(tag,text,className){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(className)n.className=className;return n;}
 function format(value){return Number.isFinite(value)?(value>0?'+':'')+value.toFixed(1)+'%':'-';}
