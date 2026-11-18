@@ -11,7 +11,7 @@ function rows(from='2015-10-28',to='2026-10-28'){
 test('prepared intraday technicals match full chart calculation without inserting the current bar twice',()=>{
  const history=rows(),sector=history.map((r,i)=>({...r,close:100+i*.01})),market=history.map((r,i)=>({...r,close:100+i*.015})),date='2026-10-28',last=history.at(-1),previous=history.at(-2),q={price:last.close,previousClose:previous.close,volume:last.volume};
  const state=prepareStock(history,sector,market,date),live=liveTechnicals(state,q,{price:sector.at(-1).close},{price:market.at(-1).close}),chart=calculate(history,sector,market).rows.at(-1);
- assert.equal(live.values.score,chart.score);assert.ok(Math.abs(live.percentile-chart.percentile)<1e-9);assert.equal(live.values.overbought,Number(chart.signal==='overbought'));assert.equal(live.values.oversold,Number(chart.signal==='oversold'));assert.equal(state.distances.length,2511);assert.equal(live.values.above100,Number(last.close>((99*state.prices[100].meanPrior+last.close)/100)));
+ assert.equal(live.values.score,chart.score);assert.ok(Math.abs(live.percentile-chart.percentile)<1e-9);assert.equal(live.values.overbought,Number(chart.signal==='overbought'));assert.equal(live.values.oversold,Number(chart.signal==='oversold'));assert.equal(state.distances.length,2511);assert.ok(Number.isFinite(state.sums.sectorRatio200));assert.equal(live.values.above100,Number(last.close>((99*state.prices[100].meanPrior+last.close)/100)));
  assert.deepEqual(liveTechnicals(state,q,{price:sector.at(-1).close},{price:market.at(-1).close}),live);assert.equal(state.previousClose,previous.close);
 });
 test('missing volume suppresses score but preserves independent closing-price and percentile indicators',()=>{
@@ -139,4 +139,14 @@ test('short-history stocks retain available metrics and leave longer windows una
   assert.equal(report.data.coverage.processed,3);assert.ok(Number.isFinite(stock.returns.day));assert.equal(stock.returns.year,null);assert.equal(stock.technical.score,null);assert.equal(stock.technical.overbought,null);assert.equal(stock.technical.above100,null);assert.equal(stock.technical.high252,null);assert.ok(Number.isFinite(stock.technical.high20));
   assert.equal(report.data.overall.technicalCoverage.score.included,2);assert.equal(report.data.overall.technicalCoverage.score.total,3);
  }finally{s.close();}
+});
+
+test('monitor score uses 100-day SMA while extreme percentile requires 200-day ratio history',()=>{
+ const all=rows('2025-01-01','2026-04-30'), sector=all.map((r,i)=>({...r,close:100+i*.012})),market=all.map((r,i)=>({...r,close:100+i*.02}));
+ const before=all.slice(0,150),date=before.at(-1).date,last=before.at(-1),previous=before.at(-2);
+ const state=prepareStock(before,sector,market,date),q={price:last.close,previousClose:previous.close,volume:last.volume};
+ const live=liveTechnicals(state,q,{price:sector.find(r=>r.date===date).close},{price:market.find(r=>r.date===date).close});
+ assert.ok(Number.isInteger(live.values.score));assert.equal(live.percentile,null);assert.equal(state.sums.sectorRatio200,null);
+ const full=calculate(before,sector,market).rows.at(-1);
+ assert.equal(full.score,live.values.score);assert.equal(full.distance,null);
 });
