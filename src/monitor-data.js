@@ -22,7 +22,7 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
  if(!['GET','POST'].includes(request.method))return reply({error:'GET or POST required'},405);
  if(!env.DB?.prepare||!env.FMP_API_KEY?.trim())return reply({error:'Existing data connection required'},503);
  const started=Date.now(),clock=()=>now+Date.now()-started;
- const today=exchangeDate(now),month=today.slice(0,7),jobKey=prefix+'job:'+universe,manifestKey=prefix+'report:'+universe;
+ const today=exchangeDate(now),month=today.slice(0,7),jobKey=prefix+'job:'+universe,manifestKey=prefix+'report-50-100:'+universe;
  async function read(key,ttl=Infinity){const row=await env.DB.prepare('SELECT payload,fetched_at FROM market_history_cache WHERE cache_key=?').bind(key).first();if(!row||now-row.fetched_at>=ttl)return null;try{return JSON.parse(row.payload);}catch{return null;}}
  async function write(key,value){const payload=JSON.stringify(value);if(payload.length>1800000)throw new Error('Storage partition too large');await env.DB.prepare('INSERT INTO market_history_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at').bind(key,payload,now).run();}
  async function removePrefix(pattern){
