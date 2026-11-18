@@ -35,7 +35,7 @@ test('aligns benchmark dates, preserves stock OBV on missing benchmark days and 
 test('rejects bad dates, duplicates, zero denominators, missing volume and invalid settings',()=>{
  for(const rows of [[{date:'2020-02-30',close:1}],[...bars([1]),...bars([2])],bars([0])])assert.throws(()=>normalize(rows));
  assert.throws(()=>normalize([{date:date(0),close:2}],true));
- for(const input of [{short:201},{sigma:0},{sell:5,buy:4},{flat:'mystery'},{lookback:1}])assert.throws(()=>methodology(input));
+ for(const input of [{extremeWindow:100},{short:201},{sigma:0},{sell:5,buy:4},{flat:'mystery'},{lookback:1}])assert.throws(()=>methodology(input));
 });
 
 test('prior-only empirical ranks expire old valid observations and ignore missing values',()=>{
@@ -46,7 +46,7 @@ test('midrank ties keep flat or numerically indistinguishable distances at the 5
  assert.deepEqual(percentileRanks([5,5,5,5,5],3,2).slice(2).map(r=>r.percentile),[50,50,50]);assert.equal(percentileRanks([0,1e-13,-1e-13,0],3,2).at(-1).percentile,50);
 });
 test('default percentile settings are configurable, bounded, and require a useful prior sample',()=>{
- const d=methodology();assert.equal(d.short,50);assert.equal(d.long,100);assert.equal(d.lookback,2511);assert.equal(d.minHistory,252);assert.equal(d.lowerPercentile,5);assert.equal(d.upperPercentile,95);assert.equal(methodology({lookback:20}).minHistory,20);
+ const d=methodology();assert.equal(d.short,50);assert.equal(d.long,100);assert.equal(d.extremeWindow,200);assert.equal(d.lookback,2511);assert.equal(d.minHistory,252);assert.equal(d.lowerPercentile,5);assert.equal(d.upperPercentile,95);assert.equal(methodology({lookback:20}).minHistory,20);
  for(const input of [{lowerPercentile:-1},{lowerPercentile:50},{upperPercentile:50},{upperPercentile:101},{minHistory:1},{minHistory:3000},{minHistory:2.5}])assert.throws(()=>methodology(input));
 });
 test('signals include the exact 5th/95th percentile boundaries and do not depend on sigma',()=>{
@@ -63,4 +63,17 @@ test('percentile calculation is causal under future appends, with no early flags
  const all=calculate(s,b,b).rows,part=calculate(s.slice(0,480),b,b).rows;assert.deepEqual(part,all.slice(0,480));
  assert.ok(all.filter(r=>r.percentileSample<252).every(r=>r.percentile===null&&r.signal===null));assert.ok(all.some(r=>r.percentile!==null));
  for(let i=0;i<all.length;i++){const row=all[i];if(row.percentile==null)continue;const prior=all.slice(0,i).map(r=>r.distance).filter(Number.isFinite).slice(-2511),eps=1e-12*Math.max(1,Math.abs(row.distance));const below=prior.filter(v=>v<row.distance-eps).length,tied=prior.filter(v=>v>=row.distance-eps&&v<=row.distance+eps).length;assert.ok(Math.abs(row.percentile-100*(below+tied/2)/prior.length)<1e-9);}
+});
+test('200-day extreme baseline is independent of the 50/100-day score windows',()=>{
+ const s=bars(Array.from({length:490},(_,i)=>100+i*.06+Math.sin(i/17)*4)),b=bars(Array.from({length:490},(_,i)=>70+i*.01));
+ const result=calculate(s,b,b),early=result.rows[100],before=result.rows[198],first=result.rows[199],last=result.rows.at(-1);
+ assert.equal(result.options.long,100);assert.equal(result.options.extremeWindow,200);
+ assert.ok(Number.isInteger(early.score));assert.equal(early.distance,null);
+ assert.equal(before.distance,null);assert.ok(Number.isFinite(first.distance));
+ const expected=last.sectorRatio/(result.rows.slice(-200).reduce((total,r)=>total+r.sectorRatio,0)/200)-1;
+ assert.ok(Math.abs(last.distance-expected)<1e-11);
+ assert.ok(last.percentile!==null);
+ const different=calculate(s,b,b,{long:150});
+ assert.equal(different.rows.at(-1).distance,last.distance);
+ assert.equal(different.rows.at(-1).percentile,last.percentile);
 });
