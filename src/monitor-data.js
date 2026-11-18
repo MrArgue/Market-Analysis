@@ -128,7 +128,7 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
   }else if(job.phase==='stocks'){
    let coldCount=0;
    for(let processed=0;processed<workload.warmStocks&&job.cursor<job.members.length;processed++){
-    const member=job.members[job.cursor],q=job.quotes[member.symbol],stateKey=prefix+'prepared:'+member.symbol+':'+member.sector;let prepared=await read(stateKey),cold=prepared?.asOf!==job.asOf||prepared?.identity!==companyId(member)||!member.industry||!member.cik||(q&&prepared?.state.previousClose&&Math.abs(q.previousClose/prepared.state.previousClose-1)>.01);
+    const member=job.members[job.cursor],q=job.quotes[member.symbol],stateKey=prefix+'prepared-50-100:'+member.symbol+':'+member.sector;let prepared=await read(stateKey),cold=prepared?.asOf!==job.asOf||prepared?.identity!==companyId(member)||!member.industry||!member.cik||(q&&prepared?.state.previousClose&&Math.abs(q.previousClose/prepared.state.previousClose-1)>.01);
     if(cold)coldCount++;
     try{
      if(!member.industry||!member.cik){
