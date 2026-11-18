@@ -1,10 +1,10 @@
-export const defaults = Object.freeze({ short: 50, long: 100, lookback: 2511, sigma: 2, lowerPercentile: 5, upperPercentile: 95, minHistory: 252, sell: 1, buy: 5, flat: 'subtract' });
+export const defaults = Object.freeze({ short: 50, long: 100, extremeWindow: 200, lookback: 2511, sigma: 2, lowerPercentile: 5, upperPercentile: 95, minHistory: 252, sell: 1, buy: 5, flat: 'subtract' });
 
 export function methodology(input = {}) {
   const o = { ...defaults, ...input };
   if(input.minHistory===undefined)o.minHistory=Math.min(defaults.minHistory,o.lookback);
-  for (const k of ['short', 'long', 'lookback']) if (!Number.isInteger(o[k]) || o[k] < 2 || o[k] > 5000) throw new Error('Invalid methodology window.');
-  if (o.short > o.long || !Number.isFinite(o.sigma) || o.sigma <= 0 || o.sigma > 10 || !Number.isInteger(o.sell) || !Number.isInteger(o.buy) || o.sell < 0 || o.buy > 6 || o.sell >= o.buy || !['subtract', 'unchanged'].includes(o.flat)) throw new Error('Invalid methodology settings.');
+  for (const k of ['short', 'long', 'extremeWindow', 'lookback']) if (!Number.isInteger(o[k]) || o[k] < 2 || o[k] > 5000) throw new Error('Invalid methodology window.');
+  if (o.short > o.long || o.extremeWindow !== 200 || !Number.isFinite(o.sigma) || o.sigma <= 0 || o.sigma > 10 || !Number.isInteger(o.sell) || !Number.isInteger(o.buy) || o.sell < 0 || o.buy > 6 || o.sell >= o.buy || !['subtract', 'unchanged'].includes(o.flat)) throw new Error('Invalid methodology settings.');
   if(!Number.isInteger(o.minHistory)||o.minHistory<2||o.minHistory>o.lookback||!Number.isFinite(o.lowerPercentile)||o.lowerPercentile<0||o.lowerPercentile>=50||!Number.isFinite(o.upperPercentile)||o.upperPercentile<=50||o.upperPercentile>100)throw new Error('Invalid percentile settings.');
   return o;
 }
@@ -59,12 +59,14 @@ export function calculate(stockRows, sectorRows, marketRows, input = {}) {
   }
   const series = ['sectorRatio', 'marketRatio', 'obv'];
   const means = series.map(k => [averages(k, options.short), averages(k, options.long)]);
+  // Extreme distance is independently anchored to the stock/sector 200-observation mean.
+  const extremeMean = averages('sectorRatio', options.extremeWindow);
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     r.averages = means.map(m => [m[0][i], m[1][i]]);
     r.components = series.flatMap((k, j) => r.averages[j].map(a => a === null || r[k] === null ? null : Number(r[k] > a)));
     r.score = r.components.includes(null) ? null : r.components.reduce((a, b) => a + b, 0);
-    r.distance = r.sectorRatio === null || r.averages[0][1] === null ? null : r.sectorRatio / r.averages[0][1] - 1;
+    r.distance = r.sectorRatio === null || extremeMean[i] === null ? null : r.sectorRatio / extremeMean[i] - 1;
   }
   const ranks=percentileRanks(rows.map(r=>r.distance),options.lookback,options.minHistory);
   // Legacy z-score remains diagnostic for workbook parity; markers use empirical percentiles.
@@ -80,7 +82,7 @@ export function calculate(stockRows, sectorRows, marketRows, input = {}) {
       }
     }
     if (r.distance !== null) { n++; const delta = r.distance - mean; mean += delta / n; m2 += delta * (r.distance - mean); }
-    if (i && rows[i - 1].averages[0][1] !== null && r.distance !== null) {
+    if (i && extremeMean[i - 1] !== null && r.distance !== null) {
       const sd = Math.sqrt(Math.max(0, m2) / n);
       if (n >= 2 && sd > 1e-12) r.z = (r.distance - mean) / sd;
     }
