@@ -11,14 +11,14 @@ function rows(from='2015-10-28',to='2026-10-28'){
 test('prepared intraday technicals match full chart calculation without inserting the current bar twice',()=>{
  const history=rows(),sector=history.map((r,i)=>({...r,close:100+i*.01})),market=history.map((r,i)=>({...r,close:100+i*.015})),date='2026-10-28',last=history.at(-1),previous=history.at(-2),q={price:last.close,previousClose:previous.close,volume:last.volume};
  const state=prepareStock(history,sector,market,date),live=liveTechnicals(state,q,{price:sector.at(-1).close},{price:market.at(-1).close}),chart=calculate(history,sector,market).rows.at(-1);
- assert.equal(live.values.score,chart.score);assert.ok(Math.abs(live.percentile-chart.percentile)<1e-9);assert.equal(live.values.overbought,Number(chart.signal==='overbought'));assert.equal(live.values.oversold,Number(chart.signal==='oversold'));assert.equal(state.distances.length,2511);
+ assert.equal(live.values.score,chart.score);assert.ok(Math.abs(live.percentile-chart.percentile)<1e-9);assert.equal(live.values.overbought,Number(chart.signal==='overbought'));assert.equal(live.values.oversold,Number(chart.signal==='oversold'));assert.equal(state.distances.length,2511);assert.equal(live.values.above100,Number(last.close>((99*state.prices[100].meanPrior+last.close)/100)));
  assert.deepEqual(liveTechnicals(state,q,{price:sector.at(-1).close},{price:market.at(-1).close}),live);assert.equal(state.previousClose,previous.close);
 });
 test('missing volume suppresses score but preserves independent closing-price and percentile indicators',()=>{
  const history=rows();history[10].volume=null;const state=prepareStock(history,history,history,'2026-10-28'),q={price:110,previousClose:history.at(-2).close,volume:1000};const live=liveTechnicals(state,q,{price:110},{price:110});assert.equal(live.values.score,null);assert.equal(live.percentile,50);assert.ok(Number.isFinite(live.values.above50));
 });
 test('missing recent sessions and price-basis mismatch cannot create false long-window technicals',()=>{
- const history=rows();history.splice(-3,1);const calendar=rows(),state=prepareStock(history,calendar,calendar,'2026-10-28'),q={price:110,previousClose:calendar.at(-2).close,volume:1000};const live=liveTechnicals(state,q,{price:110},{price:110});assert.equal(live.values.score,null);assert.equal(live.values.above200,null);assert.equal(live.values.high252,null);assert.equal(live.values.advancing,0);
+ const history=rows();history.splice(-3,1);const calendar=rows(),state=prepareStock(history,calendar,calendar,'2026-10-28'),q={price:110,previousClose:calendar.at(-2).close,volume:1000};const live=liveTechnicals(state,q,{price:110},{price:110});assert.equal(live.values.score,null);assert.equal(live.values.above100,null);assert.equal(live.values.high252,null);assert.equal(live.values.advancing,0);
  const split=liveTechnicals(state,{...q,previousClose:q.previousClose/2},{price:110},{price:110});assert.equal(split.percentile,null);assert.equal(split.values.advancing,1);
 });
 test('closing highs compare prior N closes including ties; unchanged quotes are neither advance nor decline',()=>{
@@ -136,7 +136,7 @@ test('short-history stocks retain available metrics and leave longer windows una
  const s=setup();try{
   const fetcher=async input=>{const u=new URL(input);if(u.pathname.endsWith('/historical-price-eod/full')&&u.searchParams.get('symbol')==='T0')return Response.json(s.history.filter(r=>r.date>='2026-09-01'&&r.date>=u.searchParams.get('from')&&r.date<=u.searchParams.get('to')));return s.fetcher(input);};
   const report=await s.run(fetcher),stock=report.data.groups[0].industries[0].stocks.find(r=>r.symbol==='T0');
-  assert.equal(report.data.coverage.processed,3);assert.ok(Number.isFinite(stock.returns.day));assert.equal(stock.returns.year,null);assert.equal(stock.technical.score,null);assert.equal(stock.technical.overbought,null);assert.equal(stock.technical.above200,null);assert.equal(stock.technical.high252,null);assert.ok(Number.isFinite(stock.technical.high20));
+  assert.equal(report.data.coverage.processed,3);assert.ok(Number.isFinite(stock.returns.day));assert.equal(stock.returns.year,null);assert.equal(stock.technical.score,null);assert.equal(stock.technical.overbought,null);assert.equal(stock.technical.above100,null);assert.equal(stock.technical.high252,null);assert.ok(Number.isFinite(stock.technical.high20));
   assert.equal(report.data.overall.technicalCoverage.score.included,2);assert.equal(report.data.overall.technicalCoverage.score.total,3);
  }finally{s.close();}
 });
