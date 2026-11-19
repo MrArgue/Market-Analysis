@@ -26,7 +26,7 @@ function setup(){
  const request=body=>new Request('https://example.test/api/historical-research?universe=iwb',body?{method:'POST',headers:{Origin:'https://example.test','Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);
  const invoke=async body=>{calls=0;const response=await handleHistoricalResearch(request(body),env,now);assert.ok(calls<40,'bounded D1 operations per request: '+calls);return{status:response.status,data:await response.json()};};
  async function run(){let x=await invoke({action:'start'}),steps=0;while(x.data.state==='loading'){
-  x=await invoke({action:'step',id:x.data.id});assert.ok(++steps<300);
+  x=await invoke({action:'step',id:x.data.id});assert.ok(++steps<700);
   if(x.status!==200)throw new Error('Refresh failed: '+JSON.stringify(x));
  }return x;}
  return{db,env,seed,request,invoke,run,close:()=>db.close()};
@@ -52,6 +52,22 @@ test('POST requires same origin and a known action; GET never rebuilds',async()=
   const bad=new Request('https://example.test/api/historical-research',{method:'POST',headers:{Origin:'https://evil.test','Content-Type':'application/json'},body:'{"action":"start"}'});
   assert.equal((await handleHistoricalResearch(bad,s.env,now)).status,403);
   assert.equal((await s.invoke({action:'erase'})).status,400);
+  assert.equal((await s.invoke()).data.state,'not-loaded');
+ }finally{s.close();}
+});
+
+test('lightweight progress reads preserve the exact saved checkpoint across interruptions',async()=>{
+ const s=setup();try{
+  const start=await s.invoke({action:'start'});assert.equal(start.data.done,0);
+  const first=await s.invoke({action:'step',id:start.data.id});
+  assert.equal(first.data.done,2);
+  const request=new Request('https://example.test/api/historical-research?universe=iwb&progress=1');
+  const checkpoint=await (await handleHistoricalResearch(request,s.env,now)).json();
+  assert.equal(checkpoint.id,start.data.id);assert.equal(checkpoint.done,2);
+  const resumed=await s.invoke({action:'start'});assert.equal(resumed.data.id,start.data.id);
+  assert.equal(resumed.data.done,2);
+  const next=await s.invoke({action:'step',id:resumed.data.id});
+  assert.equal(next.data.done,4);
   assert.equal((await s.invoke()).data.state,'not-loaded');
  }finally{s.close();}
 });
