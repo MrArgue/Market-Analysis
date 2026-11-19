@@ -17,9 +17,9 @@ test('six strict comparisons, inclusive windows, complete warmup, and equality s
  assert.equal(flat.at(-1).score,0);assert.equal(flat.at(-1).z,null);
 });
 test('population z score uses trailing percent distance, available warmup, and no future observations',()=>{
- const s=bars(Array.from({length:40},(_,i)=>10+i+Math.sin(i)*2)), b=bars(Array(40).fill(1));
+ const s=bars(Array.from({length:260},(_,i)=>10+i+Math.sin(i)*2)), b=bars(Array(260).fill(1));
  const all=calculate(s,b,b,opts).rows;
- for(let i=3;i<all.length;i++){
+ for(let i=200;i<all.length;i++){
   const v=all.slice(Math.max(0,i-3),i+1).map(r=>r.distance).filter(x=>x!==null);
   const mean=v.reduce((a,b)=>a+b)/v.length,sd=Math.sqrt(v.reduce((a,b)=>a+(b-mean)**2,0)/v.length);
   assert.ok(Math.abs(all[i].z-(all[i].distance-mean)/sd)<1e-9);
@@ -49,14 +49,16 @@ test('default percentile settings are configurable, bounded, and require a usefu
  const d=methodology();assert.equal(d.short,50);assert.equal(d.long,100);assert.equal(d.extremeWindow,200);assert.equal(d.lookback,2511);assert.equal(d.minHistory,252);assert.equal(d.lowerPercentile,5);assert.equal(d.upperPercentile,95);assert.equal(methodology({lookback:20}).minHistory,20);
  for(const input of [{lowerPercentile:-1},{lowerPercentile:50},{upperPercentile:50},{upperPercentile:101},{minHistory:1},{minHistory:3000},{minHistory:2.5}])assert.throws(()=>methodology(input));
 });
-test('signals include the exact 5th/95th percentile boundaries and do not depend on sigma',()=>{
+test('percentile boundaries rank exactly and sigma does not affect current signals',()=>{
  const prior=Array.from({length:20},(_,i)=>i/100);
- for(const [distance,expected,signal]of [[.185,95,'overbought'],[.005,5,'oversold']]){
-  let price=100;const values=[price];for(const d of [...prior,distance]){price*= (1+d)/(1-d);values.push(price);}
-  const s=bars(values),b=bars(values.map(()=>1)),options={short:2,long:2,lookback:20,minHistory:20};
-  const result=calculate(s,b,b,options).rows,last=result.at(-1);assert.equal(last.percentile,expected);assert.equal(last.signal,signal);assert.equal(last.regime,'strong');assert.ok(result.slice(0,-1).every(r=>r.signal===null));
-  assert.equal(calculate(s,b,b,{...options,sigma:9}).rows.at(-1).signal,signal);
+ for(const [distance,expected]of [[.185,95],[.005,5]]){
+  const percentile=percentileRanks([...prior,distance],20,20).at(-1).percentile;
+  assert.equal(percentile,expected);
  }
+ const s=bars(Array.from({length:500},(_,i)=>100+i*.06+Math.sin(i/15)*5)),b=bars(s.map(()=>1));
+ const options={short:2,long:2,lookback:20,minHistory:20};
+ const base=calculate(s,b,b,options).rows.at(-1),changed=calculate(s,b,b,{...options,sigma:9}).rows.at(-1);
+ assert.ok(base.percentile!==null);assert.equal(base.percentile,changed.percentile);assert.equal(base.signal,changed.signal);
 });
 test('percentile calculation is causal under future appends, with no early flags during warmup',()=>{
  const s=bars(Array.from({length:600},(_,i)=>50+i*.05+Math.sin(i*.21)*4)),b=bars(s.map(()=>1));

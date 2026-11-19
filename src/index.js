@@ -5,6 +5,8 @@ import { signatureModelScript } from './signature-model.js';
 import { signatureScript as collarScript } from './signature-client.js';
 import { handleConstituents } from './constituent-data.js';
 import { handleMonitor } from './monitor-data.js';
+import {handleHistoricalResearch} from './historical-research-data.js';
+import {historicalResearchPage,historicalResearchScript} from './historical-research-page.js';
 import { handleExclusionAudit } from './exclusion-audit.js';
 import { exclusionAuditPage, exclusionAuditScript } from './exclusion-audit-page.js';
 import { monitorSampleScript } from './monitor-sample.js';
@@ -25,6 +27,7 @@ export default {
     if (path === '/diagnostics' || path.startsWith('/diagnostics/')) return handleDiagnostics(request, env, ctx);
     if (path === '/api/sectors') return handleConstituents(request, env);
     if (path === '/api/monitor') return handleMonitor(request, env);
+    if (path === '/api/historical-research') return handleHistoricalResearch(request,env);
     if (path === '/api/exclusion-audit') return handleExclusionAudit(request, env);
     if (path === '/api/chart') return handleMarket(request, env, ctx);
     const { pathname } = new URL(request.url);
@@ -38,8 +41,10 @@ export default {
       response = new Response(collarPage, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'", 'X-Content-Type-Options': 'nosniff' } });
     } else if (pathname === '/collar.js') {
       response = new Response(collarScript, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
-    } else if (pathname === '/' || pathname === '/sectors') {
-      response = new Response(pathname === '/sectors' ? sectorPage : chartPage, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self' https://seia.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff' } });
+    } else if (pathname === '/' || pathname === '/sectors' || pathname === '/historical-research') {
+      response = new Response(pathname === '/sectors' ? sectorPage : pathname === '/historical-research' ? historicalResearchPage : chartPage, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self' https://seia.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff' } });
+    } else if (pathname === '/historical-research.js') {
+      response = new Response(historicalResearchScript,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
     } else if (pathname === '/forward.js' || pathname === '/forward-math.js') {
       response = new Response(pathname === '/forward.js' ? forwardScript : forwardMathScript, {headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
     } else if (pathname === '/chart.js' || pathname === '/chart-math.js' || pathname === '/sample-data.js' || pathname === '/sectors.js') {
