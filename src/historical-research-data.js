@@ -2,7 +2,7 @@ import {analyzeHistory,packObservations,emptySummary,mergeSummaries,publicSummar
 import {sectorProxy} from './monitor-math.js';
 import {exchangeDate} from './current-quote.js';
 
-const namespace='historical-research-v1:',monitor='monitor-v1:',maxPerStep=5;
+const namespace='historical-research-v1:',monitor='monitor-v1:',maxPerStep=2;
 const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const validUniverse='iwb';
 function monthFor(now){return exchangeDate(now).slice(0,7);}
@@ -23,6 +23,15 @@ export async function handleHistoricalResearch(request,env,now=Date.now()){
   await env.DB.prepare('INSERT INTO market_history_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at').bind(key,raw,now).run();
  }
  if(request.method==='GET'){
+  // A lightweight checkpoint query lets a disconnected mobile browser resume
+  // without resetting a large research build or waiting for a full report.
+  if(url.searchParams.get('progress')==='1'){
+   const job=(await read(jobKey))?.data;
+   if(job?.phase==='running')return json({state:'loading',id:job.id,done:job.cursor,total:job.members.length,
+    processed:job.processed,missingHistory:job.missing,errors:job.errors,universe});
+   const report=await read(reportKey);
+   return json(report?.data?.state==='ready'?{state:'ready',universe}: {state:'not-loaded',universe});
+  }
   const report=await read(reportKey);
   return json(report?{...report.data,saved:true}:{state:'not-loaded',universe,reason:'No historical research report has been prepared'});
  }
@@ -50,11 +59,15 @@ export async function handleHistoricalResearch(request,env,now=Date.now()){
    return json({state:'loading',id:job.id,done:0,total:members.length,universe});
   }
   if(!job||job.phase!=='running'||job.id!==body.id)return json({error:'Research job changed; start again'},409);
+  // Reuse the same index / sector histories within a step. The persistent
+  // D1 stock history remains authoritative; this avoids repeated large reads.
+  const referenceCache=new Map();
+  async function sharedHistory(symbol){if(!referenceCache.has(symbol))referenceCache.set(symbol,await read(monitor+'history:'+symbol));return referenceCache.get(symbol);}
   for(let i=0;i<maxPerStep&&job.cursor<job.members.length;i++){
    const m=job.members[job.cursor++];
    const stock=await read(monitor+'history:'+m.symbol);
-   const sector=await read(monitor+'history:'+sectorProxy(m.sector));
-   const market=await read(monitor+'history:^GSPC');
+   const sector=await sharedHistory(sectorProxy(m.sector));
+   const market=await sharedHistory('^GSPC');
    if(!stock?.data?.rows?.length||!sector?.data?.rows?.length||!market?.data?.rows?.length){job.missing++;continue;}
    const key=namespace+'stock:'+m.symbol;
    const stamp=signature([stock,sector,market])+':'+m.sector;
@@ -90,6 +103,6 @@ export async function handleHistoricalResearch(request,env,now=Date.now()){
   await write(jobKey,job);
   return json({state:'loading',universe,id:job.id,done:job.cursor,total:job.members.length,processed:job.processed,
    missingHistory:job.missing,errors:job.errors});
- }catch{return json({error:'Historical research refresh interrupted. Any saved report remains available.'},503);}
+ }catch{return json({error:'Research step interrupted; saved checkpoint remains available for retry.',code:'step_interrupted',retryable:true},503);}
  finally{try{await env.DB.prepare('UPDATE market_history_cache SET fetched_at=0 WHERE cache_key=? AND payload=?').bind(leaseKey,token).run();}catch{}}
 }
