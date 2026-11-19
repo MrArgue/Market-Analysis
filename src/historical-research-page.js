@@ -69,18 +69,48 @@ async function load(){try{const data=await api();if(data.state==='ready'){curren
  sel.value=[...sel.options].some(o=>o.value===keep)?keep:'ALL';render();
  }else el('status').textContent='No saved historical research yet. Build from the IWB histories cached by the US Sectors/Industries tab.';
  }catch(e){el('status').textContent=e.message;}}
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function progress(){
+ const response=await fetch('/api/historical-research?universe=iwb&progress=1',{cache:'no-store'});
+ if(!response.ok)throw Error('Unable to read saved research progress');
+ return response.json();
+}
+async function resumeRequest(body){
+ // Mobile Safari may abandon an individual request while the Worker has
+ // successfully saved its checkpoint. Check progress before retrying a step.
+ let lastError;
+ for(let attempt=0;attempt<5;attempt++){
+  try{return await api(body);}catch(error){
+   lastError=error;
+   if(attempt===4)break;
+   el('status').textContent='Connection interrupted. Checking saved progress ('+(attempt+1)+'/4)…';
+   await delay(Math.min(1000*2**attempt,8000));
+   try{
+    const saved=await progress();
+    if(saved.state==='ready')return api();
+    if(saved.state==='loading'&&saved.id)return saved;
+   }catch{}
+  }
+ }
+ throw lastError;
+}
 async function refresh(){
  if(running)return;running=true;el('refresh').disabled=true;
+ let lastDone=-1,stallCount=0;
  try{
-  let result=await api({action:'start'}),steps=0;
+  let result=await resumeRequest({action:'start'}),steps=0;
   while(result.state==='loading'){
-   el('status').textContent=result.waiting?'Another tab is building research…':'Processing '+count(result.done)+' / '+count(result.total)+' securities · '+count(result.processed)+' successfully analyzed';
-   if(result.waiting){await new Promise(resolve=>setTimeout(resolve,2500));result=await api({action:'start'});continue;}
-   if(++steps>500)throw Error('Refresh exceeded the safe step limit');
-   result=await api({action:'step',id:result.id});
+   const done=result.done??0;
+   if(done===lastDone&&!result.waiting)stallCount++;else stallCount=0;
+   lastDone=done;
+   if(stallCount>12)throw Error('Research paused after repeated interruptions at '+count(done)+' stocks. Progress is saved; press Build / Refresh Research to resume.');
+   el('status').textContent=result.waiting?'Another tab is finishing a batch…':'Processing '+count(done)+' / '+count(result.total)+' securities · '+count(result.processed)+' successfully analyzed';
+   if(++steps>1600)throw Error('Research paused at the safe step limit. Progress is saved; refresh again to resume.');
+   if(result.waiting){await delay(Math.max(2000,(result.retryAfter||2)*1000));result=await resumeRequest({action:'start'});continue;}
+   result=await resumeRequest({action:'step',id:result.id});
   }
   await load();
- }catch(e){el('status').textContent=e.message+' · Previously saved results, if any, remain available.';}
+ }catch(e){el('status').textContent=e.message+' · Checkpointed work is retained; press Build / Refresh Research to resume.';}
  finally{running=false;el('refresh').disabled=false;}
 }
 el('refresh').onclick=refresh;el('stat').onchange=render;el('sector').onchange=render;
