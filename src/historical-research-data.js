@@ -6,7 +6,7 @@ const namespace='historical-research-v1:',monitor='monitor-v1:',maxPerStep=5;
 const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const validUniverse='iwb';
 function monthFor(now){return exchangeDate(now).slice(0,7);}
-function signature(parts){return parts.map(p=>[p?.fetched_at||0,p?.data?.until||'',p?.data?.rows?.length||0]).join(':')).join('|');}
+function signature(parts){return parts.map(p=>[p?.fetched_at||0,p?.data?.until||'',p?.data?.rows?.length||0].join(':')).join('|');}
 export async function handleHistoricalResearch(request,env,now=Date.now()){
  const url=new URL(request.url),universe=url.searchParams.get('universe')||validUniverse;
  if(universe!==validUniverse)return json({error:'Only the IWB Russell 1000 proxy is supported'},400);
