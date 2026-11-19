@@ -127,7 +127,7 @@ test('VRT uses XLI and never requests the unavailable sector index, even when an
  });
  assert.equal(r.status,200);const data=await r.json();assert.equal(data.sector,'XLI');assert.match(data.sectorName,/ETF/);
  const symbols=s.calls.map(c=>c.url.searchParams.get('symbol'));assert.deepEqual(symbols,['VRT','XLI','^GSPC']);
- assert.equal(data.rows.at(-1).sectorRatio,1);assert.equal(data.rows.at(-1).distance,0);
+ assert.equal(data.rows.at(-1).sectorRatio,1);assert.equal(data.rows.at(-1).distance,null); // fewer than 200 aligned observations
  assert.ok(s.calls.every(c=>!c.url.pathname.endsWith('/index-list') && !c.url.searchParams.get('symbol')?.startsWith('^SP500-')));
 });
 test('percentile controls validate before data calls and reuse existing history caches',async()=>{
