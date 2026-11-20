@@ -1,6 +1,6 @@
 import {holdingsUrl,parseIwbHoldings,historyWindows} from './iwb-universe.js';
 import {exchangeDate} from './current-quote.js';
-import {quoteSessionFreshness} from './market-session.js';
+import {quoteSessionFreshness,expectedMarketSession} from './market-session.js';
 import {validDate} from './technical.js';
 import {sectorEtfs} from './sectors.js';
 import {canonicalSector,sectorProxy,prepareStock,stockRecord,liveTechnicals,aggregateMonitor,companyId} from './monitor-math.js';
@@ -35,7 +35,7 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
  async function housekeeping(action){try{await action();}catch{console.warn('Monitor temporary cache cleanup deferred');}}
  async function saved(){
   const m=await read(manifestKey);if(!m)return reply({state:'not-loaded',universe});
-  const {groups,...metadata}=m;metadata.status+=' · Saved snapshot as of '+(metadata.asOf||'unavailable')+'.';
+  const {groups,...metadata}=m;metadata.expectedSession=expectedMarketSession(now);metadata.stale=!!metadata.asOf&&metadata.asOf<metadata.expectedSession;metadata.status+=' · Saved snapshot as of '+(metadata.asOf||'unavailable')+(metadata.stale?' · STALE: a newer market session is expected.':'')+'.';
   const encoder=new TextEncoder();
   const stream=new ReadableStream({async start(controller){try{
    controller.enqueue(encoder.encode(JSON.stringify(metadata).slice(0,-1)+',"groups":['));
