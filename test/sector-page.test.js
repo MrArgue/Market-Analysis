@@ -60,11 +60,11 @@ test('industry stocks are collapsed by default, created lazily and toggled with 
  let toggle=find('industry-toggle')[0];assert.equal(toggle['aria-expanded'],'false');toggle.onclick();assert.equal(toggle['aria-expanded'],'true');assert.equal(find('stock').length,2);assert.ok(find('stock').every(n=>n.hidden===false));assert.equal(calls,1);
  toggle.onclick();assert.ok(find('stock').every(n=>n.hidden===true));assert.equal(calls,1);toggle.onclick();await nodes['load-sectors'].onclick();assert.ok(find('stock').every(n=>n.hidden===false));assert.equal(calls,2);
 });
-test('navigating to the page first displays a saved snapshot then requests updated returns automatically',async()=>{
+test('navigating to the page displays saved returns without automatically refreshing the entire universe',async()=>{
  class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
  const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method'].map(k=>[k,new Node()])),methods=[];
  const data=status=>({state:'ready',groups:[{name:'Industrials',industries:[]}],sourceLabel:'TEST',methodology:'TEST',status});
- vm.runInNewContext(sectorScript,{window:{},document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{methods.push(options?.method||'GET');return{ok:true,json:async()=>data(options?'Fresh returns':'Saved returns')};}});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(methods,['GET','POST']);assert.equal(nodes['sector-status'].textContent,'Fresh returns');
+ vm.runInNewContext(sectorScript,{window:{},document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{methods.push(options?.method||'GET');return{ok:true,json:async()=>data(options?'Fresh returns':'Saved returns')};}});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(methods,['GET']);assert.equal(nodes['sector-status'].textContent,'Saved returns');
 });
 test('Returns / Technicals swaps columns locally, preserves expansion and uses two compact technical tables',async()=>{
  class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
@@ -73,11 +73,11 @@ test('Returns / Technicals swaps columns locally, preserves expansion and uses t
  vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async()=>{calls++;return{ok:true,json:async()=>data};}});await nodes['load-sectors'].onclick();
  const all=n=>n.children.flatMap(c=>[c,...all(c)]);all(nodes['sector-results']).find(n=>n.className==='industry-toggle').onclick();nodes['view-technicals'].onchange();const elements=all(nodes['sector-results']);assert.equal(nodes['sector-results'].children.length,2);assert.ok(elements.some(n=>n.textContent==='4.25'));assert.ok(!elements.some(n=>String(n.textContent).includes(' / 6')));assert.ok(elements.some(n=>n.textContent==='Universe breadth'));assert.ok(elements.some(n=>n.className==='stock'&&n.hidden===false));assert.ok(elements.some(n=>n.textContent==='-/-'));assert.equal(calls,1);nodes['view-returns'].onchange();assert.equal(calls,1);
 });
-test('universe selector fetches its own snapshot and refresh without repainting the old universe',async()=>{
+test('universe selector fetches its own saved snapshot without running provider requests',async()=>{
  class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}
  const nodes=Object.fromEntries(['load-sectors','sector-status','sector-results','source-label','sector-method','monitor-universe'].map(k=>[k,new Node()])),calls=[];
  const data={state:'ready',groups:[{name:'Sector',industries:[]}],sourceLabel:'S&P source',methodology:'TEST',status:'TEST'};
- vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{calls.push([url,options?.method||'GET']);return{ok:true,json:async()=>data};}});nodes['monitor-universe'].value='sp500';await nodes['monitor-universe'].onchange();assert.deepEqual(calls,[['/api/monitor?universe=sp500','GET'],['/api/monitor?universe=sp500','POST']]);assert.equal(nodes['source-label'].textContent,'S&P source');
+ vm.runInNewContext(sectorScript,{document:{getElementById:id=>nodes[id],createElement:()=>new Node()},fetch:async(url,options)=>{calls.push([url,options?.method||'GET']);return{ok:true,json:async()=>data};}});nodes['monitor-universe'].value='sp500';await nodes['monitor-universe'].onchange();assert.deepEqual(calls,[['/api/monitor?universe=sp500','GET']]);assert.equal(nodes['source-label'].textContent,'S&P source');
 });
 test('a transient HTML server failure retries the same saved action without parsing HTML as JSON',async()=>{
  class Node{constructor(){this.children=[];this.textContent='';}setAttribute(k,v){this[k]=String(v);}append(...n){this.children.push(...n);}replaceChildren(){this.children=[];}}

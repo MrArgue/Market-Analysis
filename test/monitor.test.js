@@ -150,3 +150,27 @@ test('monitor score uses 100-day SMA while extreme percentile requires 200-day r
  const full=calculate(before,sector,market).rows.at(-1);
  assert.equal(full.score,live.values.score);assert.equal(full.distance,null);
 });
+
+test('outdated benchmark quote cannot publish an apparently current monitor report',async()=>{
+ const s=setup();try{
+  const morning=Date.parse('2026-11-20T10:30:00Z');
+  s.setTime(morning);
+  s.seed('monitor-v1:members:iwb:2026-11',{members:s.members,holdingsAsOf:'2026-11-19',issues:[]});
+  const fetcher=async url=>{
+   const response=await s.fetcher(url);
+   if(new URL(url).pathname.endsWith('/quote'))return Response.json([{
+    symbol:'^GSPC',price:130,previousClose:129,timestamp:Date.parse('2026-11-18T21:00:00Z')/1000
+   }]);
+   return response;
+  };
+  let current=await s.invoke({action:'start'},fetcher),steps=0;
+  while(current.data.state==='loading'){
+   current=await s.invoke({action:'step',id:current.data.id},fetcher);
+   assert.ok(++steps<15);
+  }
+  assert.equal(current.status,502);
+  assert.match(current.data.error,/Benchmark quote stale/);
+  const saved=await s.invoke();
+  assert.equal(saved.data.state,'not-loaded');
+ }finally{s.close();}
+});

@@ -1,5 +1,6 @@
 import {holdingsUrl,parseIwbHoldings,historyWindows} from './iwb-universe.js';
 import {exchangeDate} from './current-quote.js';
+import {quoteSessionFreshness,expectedMarketSession} from './market-session.js';
 import {validDate} from './technical.js';
 import {sectorEtfs} from './sectors.js';
 import {canonicalSector,sectorProxy,prepareStock,stockRecord,liveTechnicals,aggregateMonitor,companyId} from './monitor-math.js';
@@ -34,7 +35,7 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
  async function housekeeping(action){try{await action();}catch{console.warn('Monitor temporary cache cleanup deferred');}}
  async function saved(){
   const m=await read(manifestKey);if(!m)return reply({state:'not-loaded',universe});
-  const {groups,...metadata}=m;metadata.status+=' · Saved snapshot; refreshing on this visit.';
+  const {groups,...metadata}=m;metadata.expectedSession=expectedMarketSession(now);metadata.stale=!!metadata.asOf&&metadata.asOf<metadata.expectedSession;metadata.status+=' · Saved snapshot as of '+(metadata.asOf||'unavailable')+(metadata.stale?' · STALE: a newer market session is expected.':'')+'.';
   const encoder=new TextEncoder();
   const stream=new ReadableStream({async start(controller){try{
    controller.enqueue(encoder.encode(JSON.stringify(metadata).slice(0,-1)+',"groups":['));
@@ -120,7 +121,9 @@ export async function handleMonitor(request,env,fetchImpl=fetch,now=Date.now()){
    }
    if(job.quoteCursor===job.symbols.length){
     if(!job.quotes['^GSPC']){const raw=await provider('quote',{symbol:'^GSPC'}),q=raw.find(q=>q.symbol==='^GSPC'&&q.price>0&&q.previousClose>0&&Number.isFinite(q.timestamp));if(q)job.quotes['^GSPC']={symbol:q.symbol,price:q.price,previousClose:q.previousClose,volume:q.volume??null,timestamp:q.timestamp};}
-    const index=job.quotes['^GSPC'];if(!index)throw new Error('Benchmark quote unavailable');job.asOf=exchangeDate(index.timestamp*1000);if(Date.parse(today)-Date.parse(job.asOf)>7*86400000||index.timestamp*1000>now+60000)throw new Error('Benchmark quote stale');
+    const index=job.quotes['^GSPC'];if(!index)throw new Error('Benchmark quote unavailable');job.asOf=exchangeDate(index.timestamp*1000);if(index.timestamp*1000>now+60000)throw new Error('Benchmark quote timestamp invalid');
+     const freshness=quoteSessionFreshness(index.timestamp,now);
+     if(!freshness.fresh)throw new Error('Benchmark quote stale: latest expected session '+freshness.expected+', received '+freshness.quoteDate);
     for(const[s,q]of Object.entries(job.quotes))if(exchangeDate(q.timestamp*1000)!==job.asOf)delete job.quotes[s];job.phase='references';
    }
   }else if(job.phase==='references'){
